@@ -1,0 +1,109 @@
+from __future__ import annotations
+
+from typing import Protocol
+
+import arxiv
+
+from arxiv_astro.models import PaperMetadata
+from arxiv_astro.settings import debug_log
+
+
+class ArxivResultClient(Protocol):
+    def results(self, search: arxiv.Search): ...
+
+
+class ArxivClient:
+    def __init__(
+        self,
+        client: ArxivResultClient | None = None,
+        page_size: int = 100,
+        delay_seconds: float = 3.0,
+        num_retries: int = 5,
+        timeout: float | None = None,
+    ) -> None:
+        _ = timeout
+        self._client = client
+        self._page_size = page_size
+        self._delay_seconds = delay_seconds
+        self._num_retries = num_retries
+
+    def fetch_category(self, category: str, max_results: int = 10) -> list[PaperMetadata]:
+        search = build_search(category, max_results)
+        client = self._client or self._build_client(max_results)
+        debug_log(
+            "fetching arxiv category",
+            category=category,
+            max_results=max_results,
+            page_size=effective_page_size(self._page_size, max_results),
+        )
+        papers = [paper_from_result(result) for result in client.results(search)]
+        debug_log("fetched arxiv papers", count=len(papers))
+        return papers
+
+    def _build_client(self, max_results: int) -> arxiv.Client:
+        return arxiv.Client(
+            page_size=effective_page_size(self._page_size, max_results),
+            delay_seconds=self._delay_seconds,
+            num_retries=self._num_retries,
+        )
+
+
+def paper_from_result(result: arxiv.Result) -> PaperMetadata:
+    arxiv_id = result.get_short_id()
+    pdf_url = result.pdf_url or f"https://arxiv.org/pdf/{arxiv_id}"
+    return PaperMetadata(
+        entry_id=result.entry_id,
+        arxiv_id=arxiv_id,
+        title=normalize_space(result.title),
+        authors=[author.name for author in result.authors],
+        summary=normalize_space(result.summary),
+        published=result.published,
+        updated=result.updated,
+        primary_category=result.primary_category,
+        categories=result.categories,
+        abs_url=f"https://arxiv.org/abs/{arxiv_id}",
+        pdf_url=pdf_url,
+        html_url=f"https://arxiv.org/html/{arxiv_id}",
+        doi=optional_normalize_space(result.doi),
+        journal_ref=optional_normalize_space(result.journal_ref),
+        comment=optional_normalize_space(result.comment),
+    )
+
+
+def fetch_category(
+    category: str,
+    max_results: int = 10,
+    page_size: int = 100,
+    delay_seconds: float = 3.0,
+    num_retries: int = 5,
+) -> list[PaperMetadata]:
+    return ArxivClient(
+        page_size=page_size,
+        delay_seconds=delay_seconds,
+        num_retries=num_retries,
+    ).fetch_category(category, max_results)
+
+
+def build_search(category: str, max_results: int) -> arxiv.Search:
+    return arxiv.Search(
+        query=f"cat:{category}",
+        max_results=max_results,
+        sort_by=arxiv.SortCriterion.SubmittedDate,
+        sort_order=arxiv.SortOrder.Descending,
+    )
+
+
+def effective_page_size(page_size: int, max_results: int) -> int:
+    if max_results <= 0:
+        return 1
+    return max(1, min(page_size, max_results))
+
+
+def normalize_space(value: str) -> str:
+    return " ".join(value.split())
+
+
+def optional_normalize_space(value: str | None) -> str | None:
+    if not value:
+        return None
+    return normalize_space(value)

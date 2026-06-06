@@ -1,0 +1,35 @@
+# arxiv-astro
+
+Minimal pipeline for fetching papers from one arXiv category, extracting usable text from HTML/PDF/abstract, sending it to an OpenAI-compatible LLM, and writing one normalized JSONL block per paper.
+
+## Run
+
+```bash
+python -m arxiv_astro.cli --category astro-ph.CO --max-results 5
+python -m arxiv_astro.cli fetch --category astro-ph.CO --max-results 5
+python -m arxiv_astro.cli fetch --category astro-ph.CO --max-results 5 --format json
+python -m arxiv_astro.cli fetch --category astro-ph.CO --max-results 5 --debug
+python -m arxiv_astro.cli run --category astro-ph.CO --max-results 5
+```
+
+The root command defaults to metadata-only `fetch`. Use `run` explicitly for the full LLM pipeline.
+
+Debug logging can also be enabled globally:
+
+```bash
+DEBUG=1 python -m arxiv_astro.cli fetch --category astro-ph.CO --max-results 5
+```
+
+Environment variables:
+
+```bash
+DEEPSEEK_API_KEY=your-api-key
+DEEPSEEK_BASE_URL=https://api.deepseek.com
+DEEPSEEK_MODEL=deepseek-v4-pro
+```
+
+## Test
+
+```bash
+pytest
+```
