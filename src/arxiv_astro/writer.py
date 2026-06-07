@@ -28,13 +28,19 @@ def write_metadata_block(paper: PaperMetadata, output_root: Path, run_date: str 
 
 
 def write_content_block(block: PaperContentBlock, output_root: Path, run_date: str | None = None) -> Path:
+    path = paper_file(output_root, block.paper.arxiv_id, "content.json")
+    if path.exists():
+        return path
     block.loaded_date = run_date or current_date()
-    return write_json(paper_file(output_root, block.paper.arxiv_id, "content.json"), block)
+    return write_json(path, block)
 
 
 def write_interpretation_block(block: PaperBlock, output_root: Path, run_date: str | None = None) -> Path:
+    path = paper_file(output_root, block.paper.arxiv_id, "interpretation.json")
+    if path.exists():
+        return path
     block.interpreted_date = run_date or current_date()
-    return write_json(paper_file(output_root, block.paper.arxiv_id, "interpretation.json"), block)
+    return write_json(path, block)
 
 
 def write_reader_block(block: ReaderPaperBlock, output_root: Path, run_date: str | None = None) -> Path:

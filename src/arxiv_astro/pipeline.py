@@ -2,9 +2,11 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Any
 
 from arxiv_astro.arxiv_client import ArxivClient
+from arxiv_astro.cache import load_cached_content, load_cached_interpretation
 from arxiv_astro.content_loader import ContentLoader
 from arxiv_astro.explain_pipeline import build_llm_input
 from arxiv_astro.llm_client import LLMClient
@@ -29,11 +31,13 @@ class Pipeline:
         content_loader: ContentLoader,
         llm_client: LLMClient,
         max_input_chars: int,
+        cache_root: Path | None = None,
     ) -> None:
         self.arxiv_client = arxiv_client
         self.content_loader = content_loader
         self.llm_client = llm_client
         self.max_input_chars = max_input_chars
+        self.cache_root = cache_root
 
     def run(self, category: str, max_results: int, on_update: PipelineUpdate | None = None) -> list[ReaderPaperBlock]:
         papers = self.arxiv_client.fetch_category(category, max_results=max_results)
@@ -48,18 +52,45 @@ class Pipeline:
 
         content = self.load_content(run, on_update)
         used_text = self.prepare_llm_input(run.paper, content)
-        emit_paper_update(on_update, run, status="llm_started", content=content, used_chars=len(used_text))
 
-        interpretation = self.llm_client.interpret(run.paper, used_text)
-        block = build_paper_block(run.paper, content, interpretation, used_text)
+        block = self.interpret_paper(run, content, used_text, on_update)
         reader_block = build_reader_block(content, block)
-        emit_paper_update(on_update, run, status="done", content=content, used_chars=len(used_text), block=block)
+        emit_paper_update(on_update, run, status="done", content=content, used_chars=block.source.used_chars, block=block)
         return reader_block
 
     def load_content(self, run: PaperRun, on_update: PipelineUpdate | None = None) -> PaperContent:
+        if self.cache_root:
+            cached = load_cached_content(self.cache_root, run.paper)
+            if cached:
+                emit_paper_update(on_update, run, status="content_loaded", content=cached.content, cache_hit=True)
+                return cached.content
+
         content = self.content_loader.load(run.paper)
         emit_paper_update(on_update, run, status="content_loaded", content=content)
         return content
+
+    def interpret_paper(
+        self,
+        run: PaperRun,
+        content: PaperContent,
+        used_text: str,
+        on_update: PipelineUpdate | None = None,
+    ) -> PaperBlock:
+        cached = load_cached_interpretation(self.cache_root, run.paper) if self.cache_root else None
+        if cached:
+            emit_paper_update(
+                on_update,
+                run,
+                status="llm_started",
+                content=content,
+                used_chars=cached.source.used_chars,
+                cache_hit=True,
+            )
+            return cached
+
+        emit_paper_update(on_update, run, status="llm_started", content=content, used_chars=len(used_text))
+        interpretation = self.llm_client.interpret(run.paper, used_text)
+        return build_paper_block(run.paper, content, interpretation, used_text)
 
     def prepare_llm_input(self, paper: PaperMetadata, content: PaperContent) -> str:
         return truncate_for_llm(build_llm_input_for_paper(paper, content), self.max_input_chars)

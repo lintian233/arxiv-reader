@@ -11,7 +11,13 @@ from arxiv_astro.models import ContentType, LLMInterpretation, PaperContent, Pap
 from arxiv_astro.normalize import build_paper_block, build_reader_block, truncate_for_llm
 from arxiv_astro.pipeline import Pipeline
 from arxiv_astro.settings import Settings, debug_log, parse_bool, set_debug
-from arxiv_astro.writer import write_fetch_outputs, write_reader_outputs
+from arxiv_astro.writer import (
+    write_content_block,
+    write_content_outputs,
+    write_fetch_outputs,
+    write_interpretation_block,
+    write_reader_outputs,
+)
 
 
 class FakeArxivClient:
@@ -84,6 +90,36 @@ def test_pipeline_emits_updates(sample_paper, sample_interpretation) -> None:
     ]
     assert events[0]["total"] == 1
     assert events[-1]["content"].text_chars == 6
+
+
+def test_pipeline_uses_content_and_interpretation_cache(sample_paper, sample_interpretation, tmp_path: Path) -> None:
+    cached_content = PaperContent(content_type=ContentType.HTML, text="cached full text", text_chars=16)
+    cached_interpretation = build_paper_block(sample_paper, cached_content, sample_interpretation, "cached")
+    write_content_block(PaperContentBlock(paper=sample_paper, content=cached_content), tmp_path)
+    write_interpretation_block(cached_interpretation, tmp_path)
+
+    class FailingContentLoader:
+        def load(self, paper):
+            raise AssertionError("content loader should not run on cache hit")
+
+    class FailingLLMClient:
+        def interpret(self, paper, text: str):
+            raise AssertionError("LLM should not run on cache hit")
+
+    events = []
+    pipeline = Pipeline(
+        arxiv_client=FakeArxivClient(sample_paper),
+        content_loader=FailingContentLoader(),
+        llm_client=FailingLLMClient(),
+        max_input_chars=20,
+        cache_root=tmp_path,
+    )
+
+    blocks = pipeline.run("astro-ph.CO", 1, on_update=events.append)
+
+    assert blocks[0].content.text == "cached full text"
+    assert blocks[0].llm_interpretation.one_sentence == "一句话总结"
+    assert [event.get("cache_hit") for event in events if event.get("cache_hit")] == [True, True]
 
 
 def test_build_reader_block_and_write_outputs(sample_paper, sample_interpretation, tmp_path: Path) -> None:
@@ -299,6 +335,33 @@ def test_cli_content_loads_metadata_and_writes_content(monkeypatch, sample_paper
     assert payload["content"]["text"] == "Full text"
 
 
+def test_cli_content_uses_cached_content(monkeypatch, sample_paper, tmp_path: Path, capsys) -> None:
+    metadata_manifest = write_fetch_outputs([sample_paper], tmp_path, "astro-ph.IM", max_results=1)
+    write_content_block(
+        PaperContentBlock(
+            paper=sample_paper,
+            content=PaperContent(content_type=ContentType.HTML, text="Cached text", text_chars=11),
+        ),
+        tmp_path,
+    )
+
+    class FailingLoader:
+        def __init__(self, pdf_dir: Path, timeout: float) -> None:
+            pass
+
+        def load(self, paper):
+            raise AssertionError("content loader should not run on cache hit")
+
+    monkeypatch.setenv("OUTPUT_DIR", str(tmp_path))
+    monkeypatch.setattr(cli, "ContentLoader", FailingLoader)
+
+    assert cli.main(["content", "--input", str(metadata_manifest)]) == 0
+
+    manifest = json.loads(Path(capsys.readouterr().out.strip()).read_text(encoding="utf-8"))
+    content_path = Path(manifest["outputs"][0]["content"])
+    assert json.loads(content_path.read_text(encoding="utf-8"))["content"]["text"] == "Cached text"
+
+
 def test_cli_explain_loads_content_and_writes_interpretation(
     monkeypatch,
     sample_paper,
@@ -314,8 +377,6 @@ def test_cli_explain_loads_content_and_writes_interpretation(
             source_url=sample_paper.html_url,
         ),
     )
-    from arxiv_astro.writer import write_content_outputs
-
     content_manifest = write_content_outputs([content_block], tmp_path, "astro-ph.IM", max_results=1)
 
     class FakeExplainLLMClient:
@@ -349,3 +410,29 @@ def test_cli_explain_loads_content_and_writes_interpretation(
     assert payload["llm_interpretation"]["one_sentence"] == "一句话"
     assert payload["source"]["used_chars"] == len("Full text")
     assert json.loads(reader_path.read_text(encoding="utf-8"))["content"]["text"] == "Full text"
+
+
+def test_cli_explain_uses_cached_interpretation(monkeypatch, sample_paper, sample_interpretation, tmp_path: Path, capsys) -> None:
+    content_block = PaperContentBlock(
+        paper=sample_paper,
+        content=PaperContent(content_type=ContentType.HTML, text="Full text", text_chars=9, source_url=sample_paper.html_url),
+    )
+    content_manifest = write_content_outputs([content_block], tmp_path, "astro-ph.IM", max_results=1)
+    write_interpretation_block(build_paper_block(sample_paper, content_block.content, sample_interpretation, "Full text"), tmp_path)
+
+    class FailingExplainLLMClient:
+        def __init__(self, api_key: str, base_url: str, model: str, timeout: float) -> None:
+            pass
+
+        def interpret(self, paper, text: str):
+            raise AssertionError("LLM should not run on cache hit")
+
+    monkeypatch.setenv("OUTPUT_DIR", str(tmp_path))
+    monkeypatch.setattr(cli, "LLMClient", FailingExplainLLMClient)
+
+    assert cli.main(["explain", "--input", str(content_manifest)]) == 0
+
+    manifest = json.loads(Path(capsys.readouterr().out.strip()).read_text(encoding="utf-8"))
+    interpretation_path = Path(manifest["outputs"][0]["interpretation"])
+    payload = json.loads(interpretation_path.read_text(encoding="utf-8"))
+    assert payload["llm_interpretation"]["one_sentence"] == "一句话总结"

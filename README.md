@@ -35,6 +35,8 @@ data/
 
 `fetch` writes `metadata.json` plus a run manifest. `content` writes `content.json` plus a run manifest. `explain` writes `interpretation.json` and `reader.json` plus a run manifest. `run` writes all four per-paper JSON files and one manifest in a single pass.
 
+Existing `content.json` and `interpretation.json` files are treated as cache. `content`, `explain`, and `run` reuse them by default, so already-loaded full text/images and already-generated LLM interpretations are not recomputed.
+
 Debug logging can also be enabled globally:
 
 ```bash
