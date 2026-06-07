@@ -30,7 +30,7 @@ class Settings:
     api_key: str
     base_url: str = "https://api.deepseek.com"
     model: str = "deepseek-v4-pro"
-    output_dir: str = "data/runs"
+    output_dir: str = "data"
     pdf_dir: str = "data/pdfs"
     request_timeout: float = 30.0
     llm_request_timeout: float = 180.0

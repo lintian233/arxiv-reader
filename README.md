@@ -1,23 +1,39 @@
 # arxiv-astro
 
-Minimal pipeline for fetching papers from one arXiv category, extracting usable text from HTML/PDF/abstract, sending it to an OpenAI-compatible LLM, and writing one normalized JSONL block per paper.
+Minimal pipeline for fetching papers from one arXiv category, extracting usable text from HTML/PDF/abstract, sending it to an OpenAI-compatible LLM, and writing per-paper JSON blocks for an arXiv reader.
 
 ## Run
 
 ```bash
 python -m arxiv_astro.cli --category astro-ph.CO --max-results 5
 python -m arxiv_astro.cli fetch --category astro-ph.CO --max-results 5
-python -m arxiv_astro.cli fetch --category astro-ph.CO --max-results 5 --format json
 python -m arxiv_astro.cli fetch --category astro-ph.CO --max-results 5 --debug
-python -m arxiv_astro.cli content --input data/runs/2026-06-06_214138_astro-ph.IM_metadata.jsonl
-python -m arxiv_astro.cli explain --input data/runs/2026-06-07_000516_2026-06-06_214138_astro-ph.IM_metadata_content.jsonl
+python -m arxiv_astro.cli content --input data/runs/2026-06-07_astro-ph.CO/manifest.json
+python -m arxiv_astro.cli explain --input data/runs/2026-06-07_astro-ph.CO/manifest.json
 python -m arxiv_astro.cli run --category astro-ph.CO --max-results 5
 ```
 
 The root command defaults to metadata-only `fetch`. Use `run` explicitly for the full LLM pipeline.
-Use `content` to load full text and images from a metadata JSONL/JSON file.
-Use `explain` to generate LLM interpretation blocks from a content JSONL/JSON file.
+Use `content` to load full text and images from a `metadata.json` or fetch `manifest.json`.
+Use `explain` to generate LLM interpretation blocks from a `content.json` or content `manifest.json`.
 The `run` command renders a live Rich table on stderr with each paper's ID, title, stage, content source, text length, and image count. Completed LLM interpretations are rendered below the table as per-paper details.
+
+Outputs are organized by stable arXiv ID:
+
+```text
+data/
+  papers/
+    2401.12345v1/
+      metadata.json
+      content.json
+      interpretation.json
+      reader.json
+  runs/
+    2026-06-07_astro-ph.CO/
+      manifest.json
+```
+
+`fetch` writes `metadata.json` plus a run manifest. `content` writes `content.json` plus a run manifest. `explain` writes `interpretation.json` and `reader.json` plus a run manifest. `run` writes all four per-paper JSON files and one manifest in a single pass.
 
 Debug logging can also be enabled globally:
 

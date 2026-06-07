@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import json
-from datetime import datetime
 from pathlib import Path
 
 import arxiv
@@ -9,10 +8,10 @@ import arxiv
 from arxiv_astro import cli
 from arxiv_astro.cli import build_parser
 from arxiv_astro.models import ContentType, LLMInterpretation, PaperContent, PaperContentBlock
-from arxiv_astro.normalize import build_paper_block, truncate_for_llm
+from arxiv_astro.normalize import build_paper_block, build_reader_block, truncate_for_llm
 from arxiv_astro.pipeline import Pipeline
 from arxiv_astro.settings import Settings, debug_log, parse_bool, set_debug
-from arxiv_astro.writer import write_jsonl, write_metadata_json, write_metadata_jsonl
+from arxiv_astro.writer import write_fetch_outputs, write_reader_outputs
 
 
 class FakeArxivClient:
@@ -62,6 +61,7 @@ def test_pipeline_builds_blocks(sample_paper, sample_interpretation) -> None:
     assert llm.seen_text == "abc"
     assert blocks[0].source.used_chars == 3
     assert blocks[0].llm_interpretation.one_sentence == "一句话总结"
+    assert blocks[0].content.text == "abcdef"
 
 
 def test_pipeline_emits_updates(sample_paper, sample_interpretation) -> None:
@@ -86,35 +86,32 @@ def test_pipeline_emits_updates(sample_paper, sample_interpretation) -> None:
     assert events[-1]["content"].text_chars == 6
 
 
-def test_build_paper_block_and_write_jsonl(sample_paper, sample_interpretation, tmp_path: Path) -> None:
+def test_build_reader_block_and_write_outputs(sample_paper, sample_interpretation, tmp_path: Path) -> None:
     content = PaperContent(content_type=ContentType.ABSTRACT, text="abstract", text_chars=8)
     block = build_paper_block(sample_paper, content, sample_interpretation, "ab")
+    reader = build_reader_block(content, block)
 
-    path = write_jsonl([block], tmp_path, "astro-ph/CO", now=datetime(2024, 1, 1, 1, 2, 3))
+    path = write_reader_outputs([reader], tmp_path, "astro-ph.CO", max_results=1, run_date="2024-01-01")
 
-    assert path.name == "2024-01-01_010203_astro-ph_CO.jsonl"
-    payload = json.loads(path.read_text(encoding="utf-8"))
+    assert path == tmp_path / "runs" / "2024-01-01_astro-ph.CO" / "manifest.json"
+    manifest = json.loads(path.read_text(encoding="utf-8"))
+    reader_path = Path(manifest["outputs"][0]["reader"])
+    payload = json.loads(reader_path.read_text(encoding="utf-8"))
     assert payload["paper"]["arxiv_id"] == sample_paper.arxiv_id
     assert payload["source"]["used_chars"] == 2
+    assert payload["built_date"] == "2024-01-01"
 
 
-def test_write_metadata_jsonl(sample_paper, tmp_path: Path) -> None:
-    path = write_metadata_jsonl([sample_paper], tmp_path, "astro-ph/IM", now=datetime(2024, 1, 1, 1, 2, 3))
+def test_write_fetch_outputs(sample_paper, tmp_path: Path) -> None:
+    path = write_fetch_outputs([sample_paper], tmp_path, "astro-ph.IM", max_results=1, run_date="2024-01-01")
 
-    assert path.name == "2024-01-01_010203_astro-ph_IM_metadata.jsonl"
-    payload = json.loads(path.read_text(encoding="utf-8"))
-    assert payload["arxiv_id"] == sample_paper.arxiv_id
-    assert payload["primary_category"] == "astro-ph.CO"
-    assert payload["doi"] == "10.1234/example"
-
-
-def test_write_metadata_json(sample_paper, tmp_path: Path) -> None:
-    path = write_metadata_json([sample_paper], tmp_path, "astro-ph/IM", now=datetime(2024, 1, 1, 1, 2, 3))
-
-    assert path.name == "2024-01-01_010203_astro-ph_IM_metadata.json"
-    payload = json.loads(path.read_text(encoding="utf-8"))
-    assert payload[0]["arxiv_id"] == sample_paper.arxiv_id
-    assert payload[0]["entry_id"] == sample_paper.entry_id
+    assert path == tmp_path / "runs" / "2024-01-01_astro-ph.IM" / "manifest.json"
+    manifest = json.loads(path.read_text(encoding="utf-8"))
+    metadata_path = Path(manifest["outputs"][0]["metadata"])
+    payload = json.loads(metadata_path.read_text(encoding="utf-8"))
+    assert payload["paper"]["primary_category"] == "astro-ph.CO"
+    assert payload["paper"]["doi"] == "10.1234/example"
+    assert payload["fetched_date"] == "2024-01-01"
 
 
 def test_settings_from_env(monkeypatch) -> None:
@@ -132,6 +129,7 @@ def test_settings_from_env(monkeypatch) -> None:
 
     assert settings.api_key == "key"
     assert settings.base_url == "https://example.com"
+    assert settings.output_dir == "out"
     assert settings.request_timeout == 12.5
     assert settings.llm_request_timeout == 180.5
     assert settings.max_input_chars == 123
@@ -166,31 +164,26 @@ def test_cli_parser() -> None:
 
 
 def test_cli_parser_supports_fetch() -> None:
-    args = build_parser().parse_args(
-        ["fetch", "--category", "astro-ph.IM", "--max-results", "2", "--format", "json", "--debug"]
-    )
+    args = build_parser().parse_args(["fetch", "--category", "astro-ph.IM", "--max-results", "2", "--debug"])
 
     assert args.command == "fetch"
     assert args.category == "astro-ph.IM"
     assert args.max_results == 2
-    assert args.format == "json"
     assert args.debug is True
 
 
 def test_cli_parser_supports_content() -> None:
-    args = build_parser().parse_args(["content", "--input", "data/runs/metadata.jsonl", "--format", "json"])
+    args = build_parser().parse_args(["content", "--input", "data/runs/2024-01-01_astro-ph.IM/manifest.json"])
 
     assert args.command == "content"
-    assert args.input == "data/runs/metadata.jsonl"
-    assert args.format == "json"
+    assert args.input == "data/runs/2024-01-01_astro-ph.IM/manifest.json"
 
 
 def test_cli_parser_supports_explain() -> None:
-    args = build_parser().parse_args(["explain", "--input", "data/runs/content.jsonl", "--format", "json"])
+    args = build_parser().parse_args(["explain", "--input", "data/papers/2401.12345v1/content.json"])
 
     assert args.command == "explain"
-    assert args.input == "data/runs/content.jsonl"
-    assert args.format == "json"
+    assert args.input == "data/papers/2401.12345v1/content.json"
 
 
 def test_cli_parser_keeps_legacy_fetch_shape() -> None:
@@ -219,10 +212,13 @@ def test_cli_fetch_writes_metadata(monkeypatch, sample_paper, tmp_path: Path, ca
 
     captured = capsys.readouterr()
     output = captured.out.strip()
-    assert output.endswith("_astro-ph.IM_metadata.jsonl")
+    assert output.endswith("runs/") is False
+    assert output.endswith("manifest.json")
     assert "[DEBUG] cli started" in captured.err
-    payload = json.loads(Path(output).read_text(encoding="utf-8"))
-    assert payload["entry_id"] == sample_paper.entry_id
+    manifest = json.loads(Path(output).read_text(encoding="utf-8"))
+    metadata_path = Path(manifest["outputs"][0]["metadata"])
+    payload = json.loads(metadata_path.read_text(encoding="utf-8"))
+    assert payload["paper"]["entry_id"] == sample_paper.entry_id
     set_debug(False)
 
 
@@ -242,28 +238,9 @@ def test_cli_legacy_shape_defaults_to_fetch(monkeypatch, sample_paper, tmp_path:
     assert cli.main(["--category", "astro-ph.IM", "--max-results", "1"]) == 0
 
     output = capsys.readouterr().out.strip()
-    assert output.endswith("_astro-ph.IM_metadata.jsonl")
-    payload = json.loads(Path(output).read_text(encoding="utf-8"))
-    assert payload["arxiv_id"] == sample_paper.arxiv_id
-
-
-def test_cli_fetch_writes_metadata_json(monkeypatch, sample_paper, tmp_path: Path, capsys) -> None:
-    class FakeFetchClient:
-        def __init__(self, timeout: float) -> None:
-            pass
-
-        def fetch_category(self, category: str, max_results: int):
-            return [sample_paper]
-
-    monkeypatch.setenv("OUTPUT_DIR", str(tmp_path))
-    monkeypatch.setattr(cli, "ArxivClient", FakeFetchClient)
-
-    assert cli.main(["fetch", "--category", "astro-ph.IM", "--max-results", "1", "--format", "json"]) == 0
-
-    output = capsys.readouterr().out.strip()
-    assert output.endswith("_astro-ph.IM_metadata.json")
-    payload = json.loads(Path(output).read_text(encoding="utf-8"))
-    assert payload[0]["entry_id"] == sample_paper.entry_id
+    assert output.endswith("manifest.json")
+    manifest = json.loads(Path(output).read_text(encoding="utf-8"))
+    assert manifest["paper_ids"] == [sample_paper.arxiv_id]
 
 
 def test_cli_requires_category() -> None:
@@ -295,8 +272,7 @@ def test_cli_fetch_reports_arxiv_error(monkeypatch, tmp_path: Path, capsys) -> N
 
 
 def test_cli_content_loads_metadata_and_writes_content(monkeypatch, sample_paper, tmp_path: Path, capsys) -> None:
-    metadata_path = tmp_path / "metadata.jsonl"
-    metadata_path.write_text(sample_paper.model_dump_json() + "\n", encoding="utf-8")
+    metadata_manifest = write_fetch_outputs([sample_paper], tmp_path, "astro-ph.IM", max_results=1, run_date="2024-01-01")
 
     class FakeLoader:
         def __init__(self, pdf_dir: Path, timeout: float) -> None:
@@ -313,12 +289,14 @@ def test_cli_content_loads_metadata_and_writes_content(monkeypatch, sample_paper
     monkeypatch.setenv("OUTPUT_DIR", str(tmp_path))
     monkeypatch.setattr(cli, "ContentLoader", FakeLoader)
 
-    assert cli.main(["content", "--input", str(metadata_path), "--format", "json"]) == 0
+    assert cli.main(["content", "--input", str(metadata_manifest)]) == 0
 
     output = capsys.readouterr().out.strip()
-    assert output.endswith("_metadata_content.json")
-    payload = json.loads(Path(output).read_text(encoding="utf-8"))
-    assert payload[0]["content"]["text"] == "Full text"
+    assert output.endswith("manifest.json")
+    manifest = json.loads(Path(output).read_text(encoding="utf-8"))
+    content_path = Path(manifest["outputs"][0]["content"])
+    payload = json.loads(content_path.read_text(encoding="utf-8"))
+    assert payload["content"]["text"] == "Full text"
 
 
 def test_cli_explain_loads_content_and_writes_interpretation(
@@ -327,7 +305,6 @@ def test_cli_explain_loads_content_and_writes_interpretation(
     tmp_path: Path,
     capsys,
 ) -> None:
-    content_path = tmp_path / "content.jsonl"
     content_block = PaperContentBlock(
         paper=sample_paper,
         content=PaperContent(
@@ -337,7 +314,9 @@ def test_cli_explain_loads_content_and_writes_interpretation(
             source_url=sample_paper.html_url,
         ),
     )
-    content_path.write_text(content_block.model_dump_json() + "\n", encoding="utf-8")
+    from arxiv_astro.writer import write_content_outputs
+
+    content_manifest = write_content_outputs([content_block], tmp_path, "astro-ph.IM", max_results=1)
 
     class FakeExplainLLMClient:
         def __init__(self, api_key: str, base_url: str, model: str, timeout: float) -> None:
@@ -359,10 +338,14 @@ def test_cli_explain_loads_content_and_writes_interpretation(
     monkeypatch.setenv("OUTPUT_DIR", str(tmp_path))
     monkeypatch.setattr(cli, "LLMClient", FakeExplainLLMClient)
 
-    assert cli.main(["explain", "--input", str(content_path), "--format", "json"]) == 0
+    assert cli.main(["explain", "--input", str(content_manifest)]) == 0
 
     output = capsys.readouterr().out.strip()
-    assert output.endswith("_content_interpretation.json")
-    payload = json.loads(Path(output).read_text(encoding="utf-8"))
-    assert payload[0]["llm_interpretation"]["one_sentence"] == "一句话"
-    assert payload[0]["source"]["used_chars"] == len("Full text")
+    assert output.endswith("manifest.json")
+    manifest = json.loads(Path(output).read_text(encoding="utf-8"))
+    interpretation_path = Path(manifest["outputs"][0]["interpretation"])
+    reader_path = Path(manifest["outputs"][0]["reader"])
+    payload = json.loads(interpretation_path.read_text(encoding="utf-8"))
+    assert payload["llm_interpretation"]["one_sentence"] == "一句话"
+    assert payload["source"]["used_chars"] == len("Full text")
+    assert json.loads(reader_path.read_text(encoding="utf-8"))["content"]["text"] == "Full text"

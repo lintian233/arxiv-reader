@@ -1,7 +1,8 @@
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import date, datetime
 from enum import StrEnum
+from pathlib import Path
 
 from pydantic import BaseModel, Field, HttpUrl
 
@@ -62,14 +63,48 @@ class LLMInterpretation(BaseModel):
     limitations: str
 
 
+def today_str() -> str:
+    return date.today().isoformat()
+
+
+class MetadataBlock(BaseModel):
+    paper: PaperMetadata
+    fetched_date: str = Field(default_factory=today_str)
+
+
 class PaperBlock(BaseModel):
     paper: PaperMetadata
     source: SourceUsage
     llm_interpretation: LLMInterpretation
-    generated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    interpreted_date: str = Field(default_factory=today_str)
 
 
 class PaperContentBlock(BaseModel):
     paper: PaperMetadata
     content: PaperContent
-    generated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    loaded_date: str = Field(default_factory=today_str)
+
+
+class ReaderPaperBlock(BaseModel):
+    paper: PaperMetadata
+    content: PaperContent
+    source: SourceUsage
+    llm_interpretation: LLMInterpretation
+    built_date: str = Field(default_factory=today_str)
+
+
+class RunOutput(BaseModel):
+    arxiv_id: str
+    metadata: Path
+    content: Path | None = None
+    interpretation: Path | None = None
+    reader: Path | None = None
+
+
+class RunManifest(BaseModel):
+    run_id: str
+    category: str
+    max_results: int
+    run_date: str
+    paper_ids: list[str]
+    outputs: list[RunOutput]
