@@ -18,7 +18,7 @@ class LLMClient:
         client: Any | None = None,
         timeout: float = 60.0,
         reasoning_effort: str = "high",
-        thinking_enabled: bool = True,
+        thinking_enabled: bool = False,
     ) -> None:
         if not api_key:
             raise ValueError("LLM API key is required")

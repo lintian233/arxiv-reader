@@ -13,6 +13,7 @@ from arxiv_astro.content_pipeline import load_content_blocks
 from arxiv_astro.content_loader import ContentLoader
 from arxiv_astro.explain_pipeline import explain_content_blocks
 from arxiv_astro.llm_client import LLMClient
+from arxiv_astro.live_view import PipelineLiveRenderer
 from arxiv_astro.metadata_io import read_metadata
 from arxiv_astro.pipeline import Pipeline
 from arxiv_astro.settings import Settings, debug_log, set_debug
@@ -149,7 +150,8 @@ def run_pipeline(category: str, max_results: int, settings: Settings) -> int:
         ),
         max_input_chars=settings.max_input_chars,
     )
-    blocks = pipeline.run(category, max_results)
+    with PipelineLiveRenderer() as live:
+        blocks = pipeline.run(category, max_results, on_update=live.on_update)
     output_path = write_jsonl(blocks, Path(settings.output_dir), category)
     print(output_path)
     return 0

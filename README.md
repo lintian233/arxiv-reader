@@ -17,6 +17,7 @@ python -m arxiv_astro.cli run --category astro-ph.CO --max-results 5
 The root command defaults to metadata-only `fetch`. Use `run` explicitly for the full LLM pipeline.
 Use `content` to load full text and images from a metadata JSONL/JSON file.
 Use `explain` to generate LLM interpretation blocks from a content JSONL/JSON file.
+The `run` command renders a live Rich table on stderr with each paper's ID, title, stage, content source, text length, and image count. Completed LLM interpretations are rendered below the table as per-paper details.
 
 Debug logging can also be enabled globally:
 

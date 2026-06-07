@@ -64,6 +64,28 @@ def test_pipeline_builds_blocks(sample_paper, sample_interpretation) -> None:
     assert blocks[0].llm_interpretation.one_sentence == "一句话总结"
 
 
+def test_pipeline_emits_updates(sample_paper, sample_interpretation) -> None:
+    events = []
+    pipeline = Pipeline(
+        arxiv_client=FakeArxivClient(sample_paper),
+        content_loader=FakeContentLoader(),
+        llm_client=FakeLLMClient(sample_interpretation),
+        max_input_chars=3,
+    )
+
+    pipeline.run("astro-ph.CO", 1, on_update=events.append)
+
+    assert [event["event"] for event in events] == ["fetched", "paper", "paper", "paper", "paper"]
+    assert [event.get("status") for event in events[1:]] == [
+        "fetched",
+        "content_loaded",
+        "llm_started",
+        "done",
+    ]
+    assert events[0]["total"] == 1
+    assert events[-1]["content"].text_chars == 6
+
+
 def test_build_paper_block_and_write_jsonl(sample_paper, sample_interpretation, tmp_path: Path) -> None:
     content = PaperContent(content_type=ContentType.ABSTRACT, text="abstract", text_chars=8)
     block = build_paper_block(sample_paper, content, sample_interpretation, "ab")

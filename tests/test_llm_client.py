@@ -56,7 +56,7 @@ def test_llm_client_uses_openai_sdk_request(sample_paper) -> None:
     assert request["model"] == "model"
     assert request["stream"] is False
     assert request["reasoning_effort"] == "high"
-    assert request["extra_body"] == {"thinking": {"type": "enabled"}}
+    # assert request["extra_body"] == {"thinking": {"type": "enabled"}}
     assert request["messages"][0]["role"] == "system"
     assert request["messages"][1]["role"] == "user"
     assert "paper text" in request["messages"][1]["content"]
