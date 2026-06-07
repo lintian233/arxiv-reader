@@ -5,9 +5,18 @@ from datetime import datetime
 from pathlib import Path
 
 from arxiv_astro.content_pipeline import load_content_blocks
+from arxiv_astro.content_io import read_content_blocks
+from arxiv_astro.explain_pipeline import build_image_context, build_llm_input, explain_content_blocks
 from arxiv_astro.metadata_io import read_metadata
-from arxiv_astro.models import ContentType, PaperContent
-from arxiv_astro.writer import write_content_json, write_content_jsonl, write_metadata_json, write_metadata_jsonl
+from arxiv_astro.models import ArticleImage, ContentType, LLMInterpretation, PaperContent, PaperContentBlock
+from arxiv_astro.writer import (
+    write_content_json,
+    write_content_jsonl,
+    write_interpretations_json,
+    write_interpretations_jsonl,
+    write_metadata_json,
+    write_metadata_jsonl,
+)
 
 
 class FakeContentLoader:
@@ -17,6 +26,23 @@ class FakeContentLoader:
             text=f"Full text for {paper.arxiv_id}",
             text_chars=28,
             source_url=paper.html_url,
+        )
+
+
+class FakeLLMClient:
+    def __init__(self) -> None:
+        self.seen_text = ""
+
+    def interpret(self, paper, text: str):
+        self.seen_text = text
+        return LLMInterpretation(
+            one_sentence="一句话",
+            background="背景",
+            problem="问题",
+            method="方法",
+            result="结果",
+            importance="重要性",
+            limitations="限制",
         )
 
 
@@ -66,3 +92,85 @@ def test_write_content_json(sample_paper, tmp_path: Path) -> None:
     assert output_path.name == "2024-01-01_010203_metadata_content.json"
     payload = json.loads(output_path.read_text(encoding="utf-8"))
     assert payload[0]["paper"]["entry_id"] == sample_paper.entry_id
+
+
+def test_read_content_blocks_jsonl(sample_paper, tmp_path: Path) -> None:
+    block = load_content_blocks([sample_paper], FakeContentLoader())[0]
+    output_path = write_content_jsonl([block], tmp_path, "metadata")
+
+    blocks = read_content_blocks(output_path)
+
+    assert len(blocks) == 1
+    assert blocks[0].content.text.startswith("Full text")
+
+
+def test_read_content_blocks_json(sample_paper, tmp_path: Path) -> None:
+    block = load_content_blocks([sample_paper], FakeContentLoader())[0]
+    output_path = write_content_json([block], tmp_path, "metadata")
+
+    blocks = read_content_blocks(output_path)
+
+    assert len(blocks) == 1
+    assert blocks[0].paper.arxiv_id == sample_paper.arxiv_id
+
+
+def test_build_llm_input_includes_image_context(sample_paper) -> None:
+    block = PaperContentBlock(
+        paper=sample_paper,
+        content=PaperContent(
+            content_type=ContentType.HTML,
+            text="Full text",
+            text_chars=9,
+            source_url=sample_paper.html_url,
+            images=[
+                ArticleImage(
+                    url="https://arxiv.org/html/2401.12345v1/fig1.png",
+                    alt="Figure alt",
+                    caption="Figure caption",
+                )
+            ],
+        ),
+    )
+
+    assert "图1:" in build_image_context(block)
+    llm_input = build_llm_input(block)
+    assert "Full text" in llm_input
+    assert "Figure caption" in llm_input
+
+
+def test_explain_content_blocks(sample_paper) -> None:
+    llm = FakeLLMClient()
+    content_block = PaperContentBlock(
+        paper=sample_paper,
+        content=PaperContent(
+            content_type=ContentType.HTML,
+            text="abcdef",
+            text_chars=6,
+            source_url=sample_paper.html_url,
+        ),
+    )
+
+    blocks = explain_content_blocks([content_block], llm, max_input_chars=3)
+
+    assert llm.seen_text == "abc"
+    assert blocks[0].paper.arxiv_id == sample_paper.arxiv_id
+    assert blocks[0].source.used_chars == 3
+    assert blocks[0].source.image_count == 0
+    assert blocks[0].source.source_url == sample_paper.html_url
+    assert blocks[0].llm_interpretation.one_sentence == "一句话"
+
+
+def test_write_interpretations(sample_paper, tmp_path: Path) -> None:
+    content_block = PaperContentBlock(
+        paper=sample_paper,
+        content=PaperContent(content_type=ContentType.ABSTRACT, text="abstract", text_chars=8),
+    )
+    block = explain_content_blocks([content_block], FakeLLMClient(), max_input_chars=20)[0]
+
+    jsonl_path = write_interpretations_jsonl([block], tmp_path, "content", now=datetime(2024, 1, 1, 1, 2, 3))
+    json_path = write_interpretations_json([block], tmp_path, "content", now=datetime(2024, 1, 1, 1, 2, 3))
+
+    assert jsonl_path.name == "2024-01-01_010203_content_interpretation.jsonl"
+    assert json_path.name == "2024-01-01_010203_content_interpretation.json"
+    assert json.loads(jsonl_path.read_text(encoding="utf-8"))["llm_interpretation"]["one_sentence"] == "一句话"
+    assert json.loads(json_path.read_text(encoding="utf-8"))[0]["llm_interpretation"]["limitations"] == "限制"

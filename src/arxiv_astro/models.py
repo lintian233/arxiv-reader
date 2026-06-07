@@ -48,6 +48,8 @@ class SourceUsage(BaseModel):
     content_type: ContentType
     text_chars: int
     used_chars: int
+    source_url: HttpUrl | None = None
+    image_count: int = 0
 
 
 class LLMInterpretation(BaseModel):
@@ -58,9 +60,6 @@ class LLMInterpretation(BaseModel):
     result: str
     importance: str
     limitations: str
-    keywords: list[str] = Field(default_factory=list)
-    reading_level: str
-    recommended_for: list[str] = Field(default_factory=list)
 
 
 class PaperBlock(BaseModel):

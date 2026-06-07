@@ -5,7 +5,7 @@ from dataclasses import dataclass
 from typing import Any
 
 
-DEBUG = True
+DEBUG = False
 
 
 def parse_bool(value: str | None) -> bool:
@@ -33,6 +33,7 @@ class Settings:
     output_dir: str = "data/runs"
     pdf_dir: str = "data/pdfs"
     request_timeout: float = 30.0
+    llm_request_timeout: float = 180.0
     max_input_chars: int = 20000
     debug: bool = False
 
@@ -45,6 +46,7 @@ class Settings:
             output_dir=os.getenv("OUTPUT_DIR", cls.output_dir),
             pdf_dir=os.getenv("PDF_DIR", cls.pdf_dir),
             request_timeout=float(os.getenv("REQUEST_TIMEOUT", cls.request_timeout)),
+            llm_request_timeout=float(os.getenv("LLM_REQUEST_TIMEOUT", cls.llm_request_timeout)),
             max_input_chars=int(os.getenv("MAX_INPUT_CHARS", cls.max_input_chars)),
             debug=parse_bool(os.getenv("DEBUG")),
         )

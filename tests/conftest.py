@@ -38,7 +38,4 @@ def sample_interpretation() -> LLMInterpretation:
         result="结果",
         importance="重要性",
         limitations="限制",
-        keywords=["cosmology"],
-        reading_level="进阶",
-        recommended_for=["研究者"],
     )

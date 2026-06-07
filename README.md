@@ -10,11 +10,13 @@ python -m arxiv_astro.cli fetch --category astro-ph.CO --max-results 5
 python -m arxiv_astro.cli fetch --category astro-ph.CO --max-results 5 --format json
 python -m arxiv_astro.cli fetch --category astro-ph.CO --max-results 5 --debug
 python -m arxiv_astro.cli content --input data/runs/2026-06-06_214138_astro-ph.IM_metadata.jsonl
+python -m arxiv_astro.cli explain --input data/runs/2026-06-07_000516_2026-06-06_214138_astro-ph.IM_metadata_content.jsonl
 python -m arxiv_astro.cli run --category astro-ph.CO --max-results 5
 ```
 
 The root command defaults to metadata-only `fetch`. Use `run` explicitly for the full LLM pipeline.
 Use `content` to load full text and images from a metadata JSONL/JSON file.
+Use `explain` to generate LLM interpretation blocks from a content JSONL/JSON file.
 
 Debug logging can also be enabled globally:
 
@@ -28,6 +30,14 @@ Environment variables:
 DEEPSEEK_API_KEY=your-api-key
 DEEPSEEK_BASE_URL=https://api.deepseek.com
 DEEPSEEK_MODEL=deepseek-v4-pro
+LLM_REQUEST_TIMEOUT=180
+```
+
+The LLM client uses the OpenAI SDK against the DeepSeek-compatible endpoint with:
+
+```python
+reasoning_effort="high"
+extra_body={"thinking": {"type": "enabled"}}
 ```
 
 ## Test

@@ -8,8 +8,10 @@ import arxiv
 from dotenv import load_dotenv
 
 from arxiv_astro.arxiv_client import ArxivClient
+from arxiv_astro.content_io import read_content_blocks
 from arxiv_astro.content_pipeline import load_content_blocks
 from arxiv_astro.content_loader import ContentLoader
+from arxiv_astro.explain_pipeline import explain_content_blocks
 from arxiv_astro.llm_client import LLMClient
 from arxiv_astro.metadata_io import read_metadata
 from arxiv_astro.pipeline import Pipeline
@@ -17,6 +19,8 @@ from arxiv_astro.settings import Settings, debug_log, set_debug
 from arxiv_astro.writer import (
     write_content_json,
     write_content_jsonl,
+    write_interpretations_json,
+    write_interpretations_jsonl,
     write_jsonl,
     write_metadata_json,
     write_metadata_jsonl,
@@ -39,6 +43,11 @@ def build_parser() -> argparse.ArgumentParser:
     content_parser.add_argument("--format", choices=["jsonl", "json"], default="jsonl", help="Content output format")
     content_parser.add_argument("--debug", action="store_true", help="Print debug information to stderr")
 
+    explain_parser = subparsers.add_parser("explain", help="Generate LLM interpretations from content")
+    explain_parser.add_argument("--input", required=True, help="Content JSONL/JSON path from content")
+    explain_parser.add_argument("--format", choices=["jsonl", "json"], default="jsonl", help="Interpretation output format")
+    explain_parser.add_argument("--debug", action="store_true", help="Print debug information to stderr")
+
     add_common_args(parser)
     return parser
 
@@ -53,7 +62,7 @@ def main(argv: list[str] | None = None) -> int:
     load_dotenv()
     args = build_parser().parse_args(argv)
     command = args.command or "fetch"
-    if command != "content" and not args.category:
+    if command not in {"content", "explain"} and not args.category:
         raise SystemExit("--category is required")
 
     settings = Settings.from_env()
@@ -72,6 +81,8 @@ def main(argv: list[str] | None = None) -> int:
             return run_fetch(args.category, args.max_results, output_format, settings)
         if command == "content":
             return run_content(Path(args.input), args.format, settings)
+        if command == "explain":
+            return run_explain(Path(args.input), args.format, settings)
 
         return run_pipeline(args.category, args.max_results, settings)
     except arxiv.ArxivError as exc:
@@ -105,6 +116,26 @@ def run_content(input_path: Path, output_format: str, settings: Settings) -> int
     return 0
 
 
+def run_explain(input_path: Path, output_format: str, settings: Settings) -> int:
+    content_blocks = read_content_blocks(input_path)
+    debug_log("loaded content input", input=str(input_path), count=len(content_blocks))
+    llm_client = LLMClient(
+        api_key=settings.api_key,
+        base_url=settings.base_url,
+        model=settings.model,
+        timeout=settings.llm_request_timeout,
+    )
+    blocks = explain_content_blocks(content_blocks, llm_client, settings.max_input_chars)
+    stem = input_path.stem
+    debug_log("writing interpretations", format=output_format, output_dir=settings.output_dir)
+    if output_format == "json":
+        output_path = write_interpretations_json(blocks, Path(settings.output_dir), stem)
+    else:
+        output_path = write_interpretations_jsonl(blocks, Path(settings.output_dir), stem)
+    print(output_path)
+    return 0
+
+
 def run_pipeline(category: str, max_results: int, settings: Settings) -> int:
     debug_log("running full pipeline", category=category, max_results=max_results)
     pipeline = Pipeline(
@@ -114,7 +145,7 @@ def run_pipeline(category: str, max_results: int, settings: Settings) -> int:
             api_key=settings.api_key,
             base_url=settings.base_url,
             model=settings.model,
-            timeout=settings.request_timeout,
+            timeout=settings.llm_request_timeout,
         ),
         max_input_chars=settings.max_input_chars,
     )

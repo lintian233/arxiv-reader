@@ -18,6 +18,37 @@ def write_jsonl(blocks: list[PaperBlock], output_dir: Path, category: str, now: 
     return output_path
 
 
+def write_interpretations_jsonl(
+    blocks: list[PaperBlock],
+    output_dir: Path,
+    stem: str,
+    now: datetime | None = None,
+) -> Path:
+    timestamp = (now or datetime.now()).strftime("%Y-%m-%d_%H%M%S")
+    safe_stem = stem.replace("/", "_")
+    output_dir.mkdir(parents=True, exist_ok=True)
+    output_path = output_dir / f"{timestamp}_{safe_stem}_interpretation.jsonl"
+    with output_path.open("w", encoding="utf-8") as handle:
+        for block in blocks:
+            handle.write(block.model_dump_json() + "\n")
+    return output_path
+
+
+def write_interpretations_json(
+    blocks: list[PaperBlock],
+    output_dir: Path,
+    stem: str,
+    now: datetime | None = None,
+) -> Path:
+    timestamp = (now or datetime.now()).strftime("%Y-%m-%d_%H%M%S")
+    safe_stem = stem.replace("/", "_")
+    output_dir.mkdir(parents=True, exist_ok=True)
+    output_path = output_dir / f"{timestamp}_{safe_stem}_interpretation.json"
+    payload = [block.model_dump(mode="json") for block in blocks]
+    output_path.write_text(json.dumps(payload, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    return output_path
+
+
 def write_metadata_jsonl(
     papers: list[PaperMetadata],
     output_dir: Path,

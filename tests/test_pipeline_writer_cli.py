@@ -8,7 +8,7 @@ import arxiv
 
 from arxiv_astro import cli
 from arxiv_astro.cli import build_parser
-from arxiv_astro.models import ContentType, PaperContent
+from arxiv_astro.models import ContentType, LLMInterpretation, PaperContent, PaperContentBlock
 from arxiv_astro.normalize import build_paper_block, truncate_for_llm
 from arxiv_astro.pipeline import Pipeline
 from arxiv_astro.settings import Settings, debug_log, parse_bool, set_debug
@@ -102,6 +102,7 @@ def test_settings_from_env(monkeypatch) -> None:
     monkeypatch.setenv("OUTPUT_DIR", "out")
     monkeypatch.setenv("PDF_DIR", "pdf")
     monkeypatch.setenv("REQUEST_TIMEOUT", "12.5")
+    monkeypatch.setenv("LLM_REQUEST_TIMEOUT", "180.5")
     monkeypatch.setenv("MAX_INPUT_CHARS", "123")
     monkeypatch.setenv("DEBUG", "true")
 
@@ -110,6 +111,7 @@ def test_settings_from_env(monkeypatch) -> None:
     assert settings.api_key == "key"
     assert settings.base_url == "https://example.com"
     assert settings.request_timeout == 12.5
+    assert settings.llm_request_timeout == 180.5
     assert settings.max_input_chars == 123
     assert settings.debug is True
     set_debug(False)
@@ -158,6 +160,14 @@ def test_cli_parser_supports_content() -> None:
 
     assert args.command == "content"
     assert args.input == "data/runs/metadata.jsonl"
+    assert args.format == "json"
+
+
+def test_cli_parser_supports_explain() -> None:
+    args = build_parser().parse_args(["explain", "--input", "data/runs/content.jsonl", "--format", "json"])
+
+    assert args.command == "explain"
+    assert args.input == "data/runs/content.jsonl"
     assert args.format == "json"
 
 
@@ -287,3 +297,50 @@ def test_cli_content_loads_metadata_and_writes_content(monkeypatch, sample_paper
     assert output.endswith("_metadata_content.json")
     payload = json.loads(Path(output).read_text(encoding="utf-8"))
     assert payload[0]["content"]["text"] == "Full text"
+
+
+def test_cli_explain_loads_content_and_writes_interpretation(
+    monkeypatch,
+    sample_paper,
+    tmp_path: Path,
+    capsys,
+) -> None:
+    content_path = tmp_path / "content.jsonl"
+    content_block = PaperContentBlock(
+        paper=sample_paper,
+        content=PaperContent(
+            content_type=ContentType.HTML,
+            text="Full text",
+            text_chars=9,
+            source_url=sample_paper.html_url,
+        ),
+    )
+    content_path.write_text(content_block.model_dump_json() + "\n", encoding="utf-8")
+
+    class FakeExplainLLMClient:
+        def __init__(self, api_key: str, base_url: str, model: str, timeout: float) -> None:
+            assert api_key == "key"
+            assert timeout == 180.0
+
+        def interpret(self, paper, text: str):
+            return LLMInterpretation(
+                one_sentence="一句话",
+                background="背景",
+                problem="问题",
+                method="方法",
+                result="结果",
+                importance="重要性",
+                limitations="限制",
+            )
+
+    monkeypatch.setenv("DEEPSEEK_API_KEY", "key")
+    monkeypatch.setenv("OUTPUT_DIR", str(tmp_path))
+    monkeypatch.setattr(cli, "LLMClient", FakeExplainLLMClient)
+
+    assert cli.main(["explain", "--input", str(content_path), "--format", "json"]) == 0
+
+    output = capsys.readouterr().out.strip()
+    assert output.endswith("_content_interpretation.json")
+    payload = json.loads(Path(output).read_text(encoding="utf-8"))
+    assert payload[0]["llm_interpretation"]["one_sentence"] == "一句话"
+    assert payload[0]["source"]["used_chars"] == len("Full text")

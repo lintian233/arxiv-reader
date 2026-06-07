@@ -23,6 +23,8 @@ def build_paper_block(
             content_type=content.content_type,
             text_chars=content.text_chars,
             used_chars=len(used_text),
+            source_url=content.source_url,
+            image_count=len(content.images),
         ),
         llm_interpretation=interpretation,
     )
