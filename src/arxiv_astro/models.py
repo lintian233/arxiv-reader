@@ -124,3 +124,15 @@ class RunManifest(BaseModel):
     run_date: str
     paper_ids: list[str]
     outputs: list[RunOutput]
+
+
+class PaperStatus(BaseModel):
+    arxiv_id: str
+    title: str | None = None
+    primary_category: str | None = None
+    has_metadata: bool = False
+    has_content: bool = False
+    has_figures: bool = False
+    has_interpretation: bool = False
+    has_reader: bool = False
+    has_pdf: bool = False
