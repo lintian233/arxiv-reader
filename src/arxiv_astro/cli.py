@@ -8,11 +8,19 @@ import arxiv
 from dotenv import load_dotenv
 
 from arxiv_astro.arxiv_client import ArxivClient
+from arxiv_astro.content_pipeline import load_content_blocks
 from arxiv_astro.content_loader import ContentLoader
 from arxiv_astro.llm_client import LLMClient
+from arxiv_astro.metadata_io import read_metadata
 from arxiv_astro.pipeline import Pipeline
 from arxiv_astro.settings import Settings, debug_log, set_debug
-from arxiv_astro.writer import write_jsonl, write_metadata_json, write_metadata_jsonl
+from arxiv_astro.writer import (
+    write_content_json,
+    write_content_jsonl,
+    write_jsonl,
+    write_metadata_json,
+    write_metadata_jsonl,
+)
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -25,6 +33,11 @@ def build_parser() -> argparse.ArgumentParser:
 
     run_parser = subparsers.add_parser("run", help="Fetch papers and run the full LLM pipeline")
     add_common_args(run_parser)
+
+    content_parser = subparsers.add_parser("content", help="Load full text and images from metadata")
+    content_parser.add_argument("--input", required=True, help="Metadata JSONL/JSON path from fetch")
+    content_parser.add_argument("--format", choices=["jsonl", "json"], default="jsonl", help="Content output format")
+    content_parser.add_argument("--debug", action="store_true", help="Print debug information to stderr")
 
     add_common_args(parser)
     return parser
@@ -39,19 +52,26 @@ def add_common_args(parser: argparse.ArgumentParser) -> None:
 def main(argv: list[str] | None = None) -> int:
     load_dotenv()
     args = build_parser().parse_args(argv)
-    if not args.category:
+    command = args.command or "fetch"
+    if command != "content" and not args.category:
         raise SystemExit("--category is required")
 
     settings = Settings.from_env()
     if args.debug:
         set_debug(True)
-    command = args.command or "fetch"
-    debug_log("cli started", command=command, category=args.category, max_results=args.max_results)
+    debug_log(
+        "cli started",
+        command=command,
+        category=getattr(args, "category", None),
+        max_results=getattr(args, "max_results", None),
+    )
 
     try:
         if command == "fetch":
             output_format = getattr(args, "format", "jsonl")
             return run_fetch(args.category, args.max_results, output_format, settings)
+        if command == "content":
+            return run_content(Path(args.input), args.format, settings)
 
         return run_pipeline(args.category, args.max_results, settings)
     except arxiv.ArxivError as exc:
@@ -66,6 +86,21 @@ def run_fetch(category: str, max_results: int, output_format: str, settings: Set
         output_path = write_metadata_json(papers, Path(settings.output_dir), category)
     else:
         output_path = write_metadata_jsonl(papers, Path(settings.output_dir), category)
+    print(output_path)
+    return 0
+
+
+def run_content(input_path: Path, output_format: str, settings: Settings) -> int:
+    papers = read_metadata(input_path)
+    debug_log("loaded metadata input", input=str(input_path), count=len(papers))
+    loader = ContentLoader(pdf_dir=Path(settings.pdf_dir), timeout=settings.request_timeout)
+    blocks = load_content_blocks(papers, loader)
+    stem = input_path.stem
+    debug_log("writing content", format=output_format, output_dir=settings.output_dir)
+    if output_format == "json":
+        output_path = write_content_json(blocks, Path(settings.output_dir), stem)
+    else:
+        output_path = write_content_jsonl(blocks, Path(settings.output_dir), stem)
     print(output_path)
     return 0
 

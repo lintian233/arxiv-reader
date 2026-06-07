@@ -153,6 +153,14 @@ def test_cli_parser_supports_fetch() -> None:
     assert args.debug is True
 
 
+def test_cli_parser_supports_content() -> None:
+    args = build_parser().parse_args(["content", "--input", "data/runs/metadata.jsonl", "--format", "json"])
+
+    assert args.command == "content"
+    assert args.input == "data/runs/metadata.jsonl"
+    assert args.format == "json"
+
+
 def test_cli_parser_keeps_legacy_fetch_shape() -> None:
     args = build_parser().parse_args(["--category", "astro-ph.CO", "--max-results", "2"])
 
@@ -252,3 +260,30 @@ def test_cli_fetch_reports_arxiv_error(monkeypatch, tmp_path: Path, capsys) -> N
     assert captured.out == ""
     assert "arXiv request failed:" in captured.err
     assert "HTTP 429" in captured.err
+
+
+def test_cli_content_loads_metadata_and_writes_content(monkeypatch, sample_paper, tmp_path: Path, capsys) -> None:
+    metadata_path = tmp_path / "metadata.jsonl"
+    metadata_path.write_text(sample_paper.model_dump_json() + "\n", encoding="utf-8")
+
+    class FakeLoader:
+        def __init__(self, pdf_dir: Path, timeout: float) -> None:
+            assert pdf_dir == Path("data/pdfs")
+
+        def load(self, paper):
+            return PaperContent(
+                content_type=ContentType.HTML,
+                text="Full text",
+                text_chars=9,
+                source_url=paper.html_url,
+            )
+
+    monkeypatch.setenv("OUTPUT_DIR", str(tmp_path))
+    monkeypatch.setattr(cli, "ContentLoader", FakeLoader)
+
+    assert cli.main(["content", "--input", str(metadata_path), "--format", "json"]) == 0
+
+    output = capsys.readouterr().out.strip()
+    assert output.endswith("_metadata_content.json")
+    payload = json.loads(Path(output).read_text(encoding="utf-8"))
+    assert payload[0]["content"]["text"] == "Full text"

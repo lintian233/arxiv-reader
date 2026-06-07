@@ -9,10 +9,12 @@ python -m arxiv_astro.cli --category astro-ph.CO --max-results 5
 python -m arxiv_astro.cli fetch --category astro-ph.CO --max-results 5
 python -m arxiv_astro.cli fetch --category astro-ph.CO --max-results 5 --format json
 python -m arxiv_astro.cli fetch --category astro-ph.CO --max-results 5 --debug
+python -m arxiv_astro.cli content --input data/runs/2026-06-06_214138_astro-ph.IM_metadata.jsonl
 python -m arxiv_astro.cli run --category astro-ph.CO --max-results 5
 ```
 
 The root command defaults to metadata-only `fetch`. Use `run` explicitly for the full LLM pipeline.
+Use `content` to load full text and images from a metadata JSONL/JSON file.
 
 Debug logging can also be enabled globally:
 
@@ -32,4 +34,11 @@ DEEPSEEK_MODEL=deepseek-v4-pro
 
 ```bash
 pytest
+```
+
+Real network integration tests are opt-in:
+
+```bash
+RUN_REAL_NETWORK=1 pytest tests/integration --no-cov
+RUN_REAL_NETWORK=1 ARXIV_ASTRO_TEST_CATEGORY=astro-ph.IM pytest tests/integration --no-cov
 ```

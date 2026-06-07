@@ -30,10 +30,18 @@ class PaperMetadata(BaseModel):
     comment: str | None = None
 
 
+class ArticleImage(BaseModel):
+    url: HttpUrl
+    alt: str | None = None
+    caption: str | None = None
+
+
 class PaperContent(BaseModel):
     content_type: ContentType
     text: str
     text_chars: int
+    source_url: HttpUrl | None = None
+    images: list[ArticleImage] = Field(default_factory=list)
 
 
 class SourceUsage(BaseModel):
@@ -59,4 +67,10 @@ class PaperBlock(BaseModel):
     paper: PaperMetadata
     source: SourceUsage
     llm_interpretation: LLMInterpretation
+    generated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+
+
+class PaperContentBlock(BaseModel):
+    paper: PaperMetadata
+    content: PaperContent
     generated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))

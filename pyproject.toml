@@ -30,6 +30,9 @@ where = ["src"]
 
 [tool.pytest.ini_options]
 addopts = "--cov=arxiv_astro --cov-report=term-missing --cov-fail-under=90"
+markers = [
+  "integration: tests that access real external services",
+]
 pythonpath = ["src"]
 testpaths = ["tests"]
 
