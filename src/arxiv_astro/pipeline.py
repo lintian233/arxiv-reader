@@ -9,8 +9,9 @@ from arxiv_astro.arxiv_client import ArxivClient
 from arxiv_astro.cache import load_cached_content, load_cached_interpretation
 from arxiv_astro.content_loader import ContentLoader
 from arxiv_astro.explain_pipeline import build_llm_input
+from arxiv_astro.figure_downloader import FigureDownloader
 from arxiv_astro.llm_client import LLMClient
-from arxiv_astro.models import PaperBlock, PaperContent, PaperContentBlock, PaperMetadata, ReaderPaperBlock
+from arxiv_astro.models import FigureSet, PaperBlock, PaperContent, PaperContentBlock, PaperMetadata, ReaderPaperBlock
 from arxiv_astro.normalize import build_paper_block, build_reader_block, truncate_for_llm
 
 
@@ -32,12 +33,14 @@ class Pipeline:
         llm_client: LLMClient,
         max_input_chars: int,
         cache_root: Path | None = None,
+        figure_downloader: FigureDownloader | None = None,
     ) -> None:
         self.arxiv_client = arxiv_client
         self.content_loader = content_loader
         self.llm_client = llm_client
         self.max_input_chars = max_input_chars
         self.cache_root = cache_root
+        self.figure_downloader = figure_downloader
 
     def run(self, category: str, max_results: int, on_update: PipelineUpdate | None = None) -> list[ReaderPaperBlock]:
         papers = self.arxiv_client.fetch_category(category, max_results=max_results)
@@ -51,10 +54,11 @@ class Pipeline:
         emit_paper_update(on_update, run, status="fetched")
 
         content = self.load_content(run, on_update)
+        figures = self.download_figures(run.paper, content)
         used_text = self.prepare_llm_input(run.paper, content)
 
         block = self.interpret_paper(run, content, used_text, on_update)
-        reader_block = build_reader_block(content, block)
+        reader_block = build_reader_block(content, block, figures)
         emit_paper_update(on_update, run, status="done", content=content, used_chars=block.source.used_chars, block=block)
         return reader_block
 
@@ -94,6 +98,11 @@ class Pipeline:
 
     def prepare_llm_input(self, paper: PaperMetadata, content: PaperContent) -> str:
         return truncate_for_llm(build_llm_input_for_paper(paper, content), self.max_input_chars)
+
+    def download_figures(self, paper: PaperMetadata, content: PaperContent) -> FigureSet | None:
+        if not self.figure_downloader:
+            return None
+        return self.figure_downloader.download(paper, content.images)
 
 
 def emit_update(on_update: PipelineUpdate | None, payload: dict[str, Any]) -> None:

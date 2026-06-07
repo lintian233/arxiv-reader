@@ -8,6 +8,7 @@ import pytest
 
 from arxiv_astro.arxiv_client import ArxivClient
 from arxiv_astro.content_loader import ContentLoader
+from arxiv_astro.figure_downloader import FigureDownloader
 from arxiv_astro.models import ContentType, PaperMetadata
 
 
@@ -72,7 +73,7 @@ def test_real_arxiv_fetch_returns_metadata(real_paper: PaperMetadata) -> None:
 
 
 def test_real_content_loader_returns_full_text(real_paper: PaperMetadata, tmp_path: Path) -> None:
-    content = ContentLoader(pdf_dir=tmp_path).load(real_paper)
+    content = ContentLoader(output_root=tmp_path).load(real_paper)
 
     assert content.content_type in {ContentType.HTML, ContentType.PDF, ContentType.ABSTRACT}
     assert content.source_url is not None
@@ -87,7 +88,7 @@ def test_real_content_loader_returns_full_text_and_article_images(
     image_rich_paper: PaperMetadata,
     tmp_path: Path,
 ) -> None:
-    content = ContentLoader(pdf_dir=tmp_path).load(image_rich_paper)
+    content = ContentLoader(output_root=tmp_path).load(image_rich_paper)
 
     assert content.content_type == ContentType.HTML
     assert str(content.source_url) == str(image_rich_paper.html_url)
@@ -104,10 +105,24 @@ def test_real_content_loader_returns_pdf_text_for_same_arxiv_id(
     image_rich_paper: PaperMetadata,
     tmp_path: Path,
 ) -> None:
-    content = ContentLoader(pdf_dir=tmp_path).load_pdf_content(image_rich_paper)
+    content = ContentLoader(output_root=tmp_path).load_pdf_content(image_rich_paper)
 
     assert content is not None
     assert content.content_type == ContentType.PDF
     assert str(content.source_url) == str(image_rich_paper.pdf_url)
     assert content.text_chars > 10_000
-    assert image_rich_paper.arxiv_id.replace("/", "_") + ".pdf" in {path.name for path in tmp_path.iterdir()}
+    assert (tmp_path / "papers" / image_rich_paper.arxiv_id.replace("/", "_") / "paper.pdf").exists()
+
+
+def test_real_figure_downloader_downloads_first_html_figure(
+    image_rich_paper: PaperMetadata,
+    tmp_path: Path,
+) -> None:
+    content = ContentLoader(output_root=tmp_path).load(image_rich_paper)
+
+    figure_set = FigureDownloader(output_root=tmp_path).download(image_rich_paper, content.images[:1])
+
+    assert len(figure_set.figures) == 1
+    figure_path = tmp_path / "papers" / image_rich_paper.arxiv_id.replace("/", "_") / figure_set.figures[0].path
+    assert figure_path.exists()
+    assert figure_path.stat().st_size > 0

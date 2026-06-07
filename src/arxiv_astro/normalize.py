@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from arxiv_astro.models import LLMInterpretation, PaperBlock, PaperContent, PaperMetadata, ReaderPaperBlock, SourceUsage
+from arxiv_astro.models import FigureSet, LLMInterpretation, PaperBlock, PaperContent, PaperMetadata, ReaderPaperBlock, SourceUsage
 
 
 def truncate_for_llm(text: str, max_chars: int) -> str:
@@ -30,10 +30,15 @@ def build_paper_block(
     )
 
 
-def build_reader_block(content: PaperContent, interpretation_block: PaperBlock) -> ReaderPaperBlock:
+def build_reader_block(
+    content: PaperContent,
+    interpretation_block: PaperBlock,
+    figures: FigureSet | None = None,
+) -> ReaderPaperBlock:
     return ReaderPaperBlock(
         paper=interpretation_block.paper,
         content=content,
+        figures=figures,
         source=interpretation_block.source,
         llm_interpretation=interpretation_block.llm_interpretation,
     )

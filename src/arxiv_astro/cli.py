@@ -8,16 +8,21 @@ import arxiv
 from dotenv import load_dotenv
 
 from arxiv_astro.arxiv_client import ArxivClient
-from arxiv_astro.cache import load_cached_content, load_cached_interpretation
-from arxiv_astro.content_io import content_paths_from_manifest, read_content_blocks
-from arxiv_astro.content_pipeline import load_content_blocks
+from arxiv_astro.content_io import read_content_blocks
 from arxiv_astro.content_loader import ContentLoader
-from arxiv_astro.explain_pipeline import explain_content_blocks
+from arxiv_astro.figure_downloader import FigureDownloader
 from arxiv_astro.llm_client import LLMClient
 from arxiv_astro.live_view import PipelineLiveRenderer
-from arxiv_astro.metadata_io import manifest_context, metadata_paths_from_manifest, read_metadata
+from arxiv_astro.metadata_io import read_metadata
 from arxiv_astro.pipeline import Pipeline
 from arxiv_astro.settings import Settings, debug_log, set_debug
+from arxiv_astro.workflows import (
+    build_content_context,
+    build_explain_context,
+    download_figure_sets,
+    explain_content_blocks_with_cache,
+    load_content_blocks_with_cache,
+)
 from arxiv_astro.writer import (
     write_content_outputs,
     write_fetch_outputs,
@@ -96,17 +101,20 @@ def run_fetch(category: str, max_results: int, settings: Settings) -> int:
 def run_content(input_path: Path, settings: Settings) -> int:
     papers = read_metadata(input_path)
     debug_log("loaded metadata input", input=str(input_path), count=len(papers))
-    loader = ContentLoader(pdf_dir=Path(settings.pdf_dir), timeout=settings.request_timeout)
     output_root = Path(settings.output_dir)
+    loader = ContentLoader(output_root=output_root, timeout=settings.request_timeout)
     blocks = load_content_blocks_with_cache(papers, loader, output_root)
-    if input_path.name == "manifest.json":
-        category, max_results = manifest_context(input_path)
-        metadata_paths = metadata_paths_from_manifest(input_path)
-    else:
-        category, max_results = papers[0].primary_category, len(papers)
-        metadata_paths = None
+    figure_sets = download_figure_sets(blocks, FigureDownloader(output_root, timeout=settings.request_timeout))
+    context = build_content_context(input_path, papers)
     debug_log("writing content", output_dir=settings.output_dir)
-    output_path = write_content_outputs(blocks, output_root, category, max_results, metadata_paths)
+    output_path = write_content_outputs(
+        blocks,
+        output_root,
+        context.category,
+        context.max_results,
+        context.metadata_paths,
+        figure_sets,
+    )
     print(output_path)
     return 0
 
@@ -122,24 +130,18 @@ def run_explain(input_path: Path, settings: Settings) -> int:
     )
     output_root = Path(settings.output_dir)
     blocks = explain_content_blocks_with_cache(content_blocks, llm_client, settings.max_input_chars, output_root)
-    if input_path.name == "manifest.json":
-        category, max_results = manifest_context(input_path)
-        content_paths = content_paths_from_manifest(input_path)
-        metadata_paths = metadata_paths_from_manifest(input_path)
-    else:
-        category, max_results = content_blocks[0].paper.primary_category, len(content_blocks)
-        content_paths = None
-        metadata_paths = None
-    content_by_id = {block.paper.arxiv_id: block for block in content_blocks}
+    context = build_explain_context(input_path, content_blocks, output_root)
     debug_log("writing interpretations", output_dir=settings.output_dir)
     output_path = write_interpretation_outputs(
         blocks,
-        content_by_id,
+        context.content_by_id,
         output_root,
-        category,
-        max_results,
-        metadata_paths=metadata_paths,
-        content_paths=content_paths,
+        context.category,
+        context.max_results,
+        metadata_paths=context.metadata_paths,
+        content_paths=context.content_paths,
+        figure_sets=context.figure_sets,
+        figure_paths=context.figure_paths,
     )
     print(output_path)
     return 0
@@ -149,7 +151,7 @@ def run_pipeline(category: str, max_results: int, settings: Settings) -> int:
     debug_log("running full pipeline", category=category, max_results=max_results)
     pipeline = Pipeline(
         arxiv_client=ArxivClient(timeout=settings.request_timeout),
-        content_loader=ContentLoader(pdf_dir=Path(settings.pdf_dir), timeout=settings.request_timeout),
+        content_loader=ContentLoader(output_root=Path(settings.output_dir), timeout=settings.request_timeout),
         llm_client=LLMClient(
             api_key=settings.api_key,
             base_url=settings.base_url,
@@ -158,51 +160,13 @@ def run_pipeline(category: str, max_results: int, settings: Settings) -> int:
         ),
         max_input_chars=settings.max_input_chars,
         cache_root=Path(settings.output_dir),
+        figure_downloader=FigureDownloader(Path(settings.output_dir), timeout=settings.request_timeout),
     )
     with PipelineLiveRenderer() as live:
         blocks = pipeline.run(category, max_results, on_update=live.on_update)
     output_path = write_reader_outputs(blocks, Path(settings.output_dir), category, max_results)
     print(output_path)
     return 0
-
-
-def load_content_blocks_with_cache(
-    papers,
-    loader: ContentLoader,
-    output_root: Path,
-):
-    misses = []
-    blocks = []
-    for paper in papers:
-        cached = load_cached_content(output_root, paper)
-        if cached:
-            debug_log("content cache hit", arxiv_id=paper.arxiv_id)
-            blocks.append(cached)
-        else:
-            debug_log("content cache miss", arxiv_id=paper.arxiv_id)
-            misses.append(paper)
-    blocks.extend(load_content_blocks(misses, loader))
-    return blocks
-
-
-def explain_content_blocks_with_cache(
-    content_blocks,
-    llm_client: LLMClient,
-    max_input_chars: int,
-    output_root: Path,
-):
-    misses = []
-    blocks = []
-    for content_block in content_blocks:
-        cached = load_cached_interpretation(output_root, content_block.paper)
-        if cached:
-            debug_log("interpretation cache hit", arxiv_id=content_block.paper.arxiv_id)
-            blocks.append(cached)
-        else:
-            debug_log("interpretation cache miss", arxiv_id=content_block.paper.arxiv_id)
-            misses.append(content_block)
-    blocks.extend(explain_content_blocks(misses, llm_client, max_input_chars))
-    return blocks
 
 
 if __name__ == "__main__":

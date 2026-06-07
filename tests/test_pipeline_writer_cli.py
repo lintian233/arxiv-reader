@@ -155,7 +155,6 @@ def test_settings_from_env(monkeypatch) -> None:
     monkeypatch.setenv("DEEPSEEK_BASE_URL", "https://example.com")
     monkeypatch.setenv("DEEPSEEK_MODEL", "model")
     monkeypatch.setenv("OUTPUT_DIR", "out")
-    monkeypatch.setenv("PDF_DIR", "pdf")
     monkeypatch.setenv("REQUEST_TIMEOUT", "12.5")
     monkeypatch.setenv("LLM_REQUEST_TIMEOUT", "180.5")
     monkeypatch.setenv("MAX_INPUT_CHARS", "123")
@@ -311,8 +310,8 @@ def test_cli_content_loads_metadata_and_writes_content(monkeypatch, sample_paper
     metadata_manifest = write_fetch_outputs([sample_paper], tmp_path, "astro-ph.IM", max_results=1, run_date="2024-01-01")
 
     class FakeLoader:
-        def __init__(self, pdf_dir: Path, timeout: float) -> None:
-            assert pdf_dir == Path("data/pdfs")
+        def __init__(self, output_root: Path, timeout: float) -> None:
+            assert output_root == tmp_path
 
         def load(self, paper):
             return PaperContent(
@@ -346,7 +345,7 @@ def test_cli_content_uses_cached_content(monkeypatch, sample_paper, tmp_path: Pa
     )
 
     class FailingLoader:
-        def __init__(self, pdf_dir: Path, timeout: float) -> None:
+        def __init__(self, output_root: Path, timeout: float) -> None:
             pass
 
         def load(self, paper):

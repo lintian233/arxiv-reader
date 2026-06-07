@@ -26,14 +26,18 @@ data/
     2401.12345v1/
       metadata.json
       content.json
+      figures.json
       interpretation.json
       reader.json
+      paper.pdf
+      figures/
+        fig_001.png
   runs/
     2026-06-07_astro-ph.CO/
       manifest.json
 ```
 
-`fetch` writes `metadata.json` plus a run manifest. `content` writes `content.json` plus a run manifest. `explain` writes `interpretation.json` and `reader.json` plus a run manifest. `run` writes all four per-paper JSON files and one manifest in a single pass.
+`fetch` writes `metadata.json` plus a run manifest. `content` writes `content.json`, downloads HTML figures to `figures/`, writes `figures.json`, and writes a run manifest. `explain` writes `interpretation.json` and `reader.json` plus a run manifest. `run` writes the complete per-paper reader assets and one manifest in a single pass.
 
 Existing `content.json` and `interpretation.json` files are treated as cache. `content`, `explain`, and `run` reuse them by default, so already-loaded full text/images and already-generated LLM interpretations are not recomputed.
 

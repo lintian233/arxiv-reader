@@ -37,6 +37,24 @@ class ArticleImage(BaseModel):
     caption: str | None = None
 
 
+def today_str() -> str:
+    return date.today().isoformat()
+
+
+class LocalFigure(BaseModel):
+    index: int
+    url: HttpUrl
+    path: Path
+    alt: str | None = None
+    caption: str | None = None
+
+
+class FigureSet(BaseModel):
+    arxiv_id: str
+    figures: list[LocalFigure] = Field(default_factory=list)
+    downloaded_date: str = Field(default_factory=today_str)
+
+
 class PaperContent(BaseModel):
     content_type: ContentType
     text: str
@@ -63,10 +81,6 @@ class LLMInterpretation(BaseModel):
     limitations: str
 
 
-def today_str() -> str:
-    return date.today().isoformat()
-
-
 class MetadataBlock(BaseModel):
     paper: PaperMetadata
     fetched_date: str = Field(default_factory=today_str)
@@ -88,6 +102,7 @@ class PaperContentBlock(BaseModel):
 class ReaderPaperBlock(BaseModel):
     paper: PaperMetadata
     content: PaperContent
+    figures: FigureSet | None = None
     source: SourceUsage
     llm_interpretation: LLMInterpretation
     built_date: str = Field(default_factory=today_str)
@@ -97,6 +112,7 @@ class RunOutput(BaseModel):
     arxiv_id: str
     metadata: Path
     content: Path | None = None
+    figures: Path | None = None
     interpretation: Path | None = None
     reader: Path | None = None
 

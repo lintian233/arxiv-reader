@@ -5,6 +5,7 @@ from datetime import date
 from pathlib import Path
 
 from arxiv_astro.models import (
+    FigureSet,
     MetadataBlock,
     PaperBlock,
     PaperContentBlock,
@@ -33,6 +34,14 @@ def write_content_block(block: PaperContentBlock, output_root: Path, run_date: s
         return path
     block.loaded_date = run_date or current_date()
     return write_json(path, block)
+
+
+def write_figure_set(figure_set: FigureSet, output_root: Path, run_date: str | None = None) -> Path:
+    path = paper_file(output_root, figure_set.arxiv_id, "figures.json")
+    if path.exists():
+        return path
+    figure_set.downloaded_date = run_date or current_date()
+    return write_json(path, figure_set)
 
 
 def write_interpretation_block(block: PaperBlock, output_root: Path, run_date: str | None = None) -> Path:
@@ -69,12 +78,14 @@ def write_content_outputs(
     category: str,
     max_results: int,
     metadata_paths: dict[str, Path] | None = None,
+    figure_sets: dict[str, FigureSet] | None = None,
     run_date: str | None = None,
 ) -> Path:
     effective_date = run_date or current_date()
     outputs = []
     for block in blocks:
         content_path = write_content_block(block, output_root, effective_date)
+        figures_path = write_figure_set(figure_sets[block.paper.arxiv_id], output_root, effective_date) if figure_sets else None
         outputs.append(
             RunOutput(
                 arxiv_id=block.paper.arxiv_id,
@@ -82,6 +93,7 @@ def write_content_outputs(
                 if metadata_paths
                 else default_metadata_path(output_root, block.paper.arxiv_id),
                 content=content_path,
+                figures=figures_path,
             )
         )
     return write_manifest(output_root, category, max_results, effective_date, outputs)
@@ -95,14 +107,23 @@ def write_interpretation_outputs(
     max_results: int,
     metadata_paths: dict[str, Path] | None = None,
     content_paths: dict[str, Path] | None = None,
+    figure_sets: dict[str, FigureSet] | None = None,
+    figure_paths: dict[str, Path] | None = None,
     run_date: str | None = None,
 ) -> Path:
     effective_date = run_date or current_date()
     outputs = []
     for block in blocks:
         content_block = contents[block.paper.arxiv_id]
+        figure_set = figure_sets.get(block.paper.arxiv_id) if figure_sets else None
         interpretation_path = write_interpretation_block(block, output_root, effective_date)
-        reader_path = write_reader_block(build_reader_block(content_block.content, block), output_root, effective_date)
+        if figure_paths and block.paper.arxiv_id in figure_paths:
+            figures_path = figure_paths[block.paper.arxiv_id]
+        elif figure_set:
+            figures_path = write_figure_set(figure_set, output_root, effective_date)
+        else:
+            figures_path = None
+        reader_path = write_reader_block(build_reader_block(content_block.content, block, figure_set), output_root, effective_date)
         outputs.append(
             RunOutput(
                 arxiv_id=block.paper.arxiv_id,
@@ -112,6 +133,7 @@ def write_interpretation_outputs(
                 content=content_paths.get(block.paper.arxiv_id, default_content_path(output_root, block.paper.arxiv_id))
                 if content_paths
                 else default_content_path(output_root, block.paper.arxiv_id),
+                figures=figures_path,
                 interpretation=interpretation_path,
                 reader=reader_path,
             )
@@ -135,6 +157,7 @@ def write_reader_outputs(
             output_root,
             effective_date,
         )
+        figures_path = write_figure_set(block.figures, output_root, effective_date) if block.figures else None
         interpretation_path = write_interpretation_block(
             PaperBlock(
                 paper=block.paper,
@@ -151,6 +174,7 @@ def write_reader_outputs(
                 arxiv_id=block.paper.arxiv_id,
                 metadata=metadata_path,
                 content=content_path,
+                figures=figures_path,
                 interpretation=interpretation_path,
                 reader=reader_path,
             )
@@ -196,6 +220,10 @@ def default_metadata_path(output_root: Path, arxiv_id: str) -> Path:
 
 def default_content_path(output_root: Path, arxiv_id: str) -> Path:
     return paper_file(output_root, arxiv_id, "content.json")
+
+
+def default_figures_path(output_root: Path, arxiv_id: str) -> Path:
+    return paper_file(output_root, arxiv_id, "figures.json")
 
 
 def run_id(run_date: str, category: str) -> str:

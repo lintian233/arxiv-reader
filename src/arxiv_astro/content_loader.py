@@ -11,17 +11,18 @@ from arxiv_astro.http_client import create_http_client
 from arxiv_astro.models import ArticleImage, ContentType, PaperContent, PaperMetadata
 from arxiv_astro.pdf_parser import PdfParser
 from arxiv_astro.settings import debug_log
+from arxiv_astro.writer import paper_file
 
 
 class ContentLoader:
     def __init__(
         self,
-        pdf_dir: Path,
+        output_root: Path,
         http_client: httpx.Client | None = None,
         pdf_parser: PdfParser | None = None,
         timeout: float = 30.0,
     ) -> None:
-        self.pdf_dir = pdf_dir
+        self.output_root = output_root
         self._client = http_client or create_http_client(timeout=timeout, follow_redirects=True)
         self._pdf_parser = pdf_parser or PdfParser()
 
@@ -66,8 +67,8 @@ class ContentLoader:
         except httpx.HTTPError:
             return ""
 
-        self.pdf_dir.mkdir(parents=True, exist_ok=True)
-        pdf_path = self.pdf_dir / f"{paper.arxiv_id.replace('/', '_')}.pdf"
+        pdf_path = paper_file(self.output_root, paper.arxiv_id, "paper.pdf")
+        pdf_path.parent.mkdir(parents=True, exist_ok=True)
         pdf_path.write_bytes(response.content)
         return self._pdf_parser.extract_text(pdf_path)
 

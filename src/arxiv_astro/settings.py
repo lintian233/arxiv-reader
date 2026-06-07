@@ -31,7 +31,6 @@ class Settings:
     base_url: str = "https://api.deepseek.com"
     model: str = "deepseek-v4-pro"
     output_dir: str = "data"
-    pdf_dir: str = "data/pdfs"
     request_timeout: float = 30.0
     llm_request_timeout: float = 180.0
     max_input_chars: int = 20000
@@ -44,7 +43,6 @@ class Settings:
             base_url=os.getenv("DEEPSEEK_BASE_URL", cls.base_url),
             model=os.getenv("DEEPSEEK_MODEL", cls.model),
             output_dir=os.getenv("OUTPUT_DIR", cls.output_dir),
-            pdf_dir=os.getenv("PDF_DIR", cls.pdf_dir),
             request_timeout=float(os.getenv("REQUEST_TIMEOUT", cls.request_timeout)),
             llm_request_timeout=float(os.getenv("LLM_REQUEST_TIMEOUT", cls.llm_request_timeout)),
             max_input_chars=int(os.getenv("MAX_INPUT_CHARS", cls.max_input_chars)),

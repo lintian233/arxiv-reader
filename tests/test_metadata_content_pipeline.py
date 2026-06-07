@@ -24,6 +24,7 @@ class FakeContentLoader:
             text=f"Full text for {paper.arxiv_id}",
             text_chars=28,
             source_url=paper.html_url,
+            images=[ArticleImage(url="https://arxiv.org/html/2401.12345v1/fig1.png", caption="Figure caption")],
         )
 
 
@@ -87,12 +88,35 @@ def test_write_content_block(sample_paper, tmp_path: Path) -> None:
 
 def test_write_content_outputs_manifest(sample_paper, tmp_path: Path) -> None:
     block = load_content_blocks([sample_paper], FakeContentLoader())[0]
+    from arxiv_astro.models import FigureSet, LocalFigure
 
-    output_path = write_content_outputs([block], tmp_path, "astro-ph.IM", max_results=1, run_date="2024-01-01")
+    figure_set = FigureSet(
+        arxiv_id=sample_paper.arxiv_id,
+        figures=[
+            LocalFigure(
+                index=1,
+                url="https://arxiv.org/html/2401.12345v1/fig1.png",
+                path=Path("figures/fig_001.png"),
+                caption="Figure caption",
+            )
+        ],
+    )
+
+    output_path = write_content_outputs(
+        [block],
+        tmp_path,
+        "astro-ph.IM",
+        max_results=1,
+        figure_sets={sample_paper.arxiv_id: figure_set},
+        run_date="2024-01-01",
+    )
 
     assert output_path == tmp_path / "runs" / "2024-01-01_astro-ph.IM" / "manifest.json"
     payload = json.loads(output_path.read_text(encoding="utf-8"))
     assert payload["outputs"][0]["content"].endswith("content.json")
+    assert payload["outputs"][0]["figures"].endswith("figures.json")
+    figures_payload = json.loads(Path(payload["outputs"][0]["figures"]).read_text(encoding="utf-8"))
+    assert figures_payload["figures"][0]["path"] == "figures/fig_001.png"
 
 
 def test_read_content_blocks_from_manifest(sample_paper, tmp_path: Path) -> None:
@@ -168,12 +192,16 @@ def test_write_interpretations(sample_paper, tmp_path: Path) -> None:
     )
     block = explain_content_blocks([content_block], FakeLLMClient(), max_input_chars=20)[0]
 
+    from arxiv_astro.models import FigureSet
+
+    figure_set = FigureSet(arxiv_id=sample_paper.arxiv_id)
     manifest_path = write_interpretation_outputs(
         [block],
         {sample_paper.arxiv_id: content_block},
         tmp_path,
         "astro-ph.IM",
         max_results=1,
+        figure_sets={sample_paper.arxiv_id: figure_set},
         run_date="2024-01-01",
     )
 
@@ -181,4 +209,6 @@ def test_write_interpretations(sample_paper, tmp_path: Path) -> None:
     interpretation_path = Path(payload["outputs"][0]["interpretation"])
     reader_path = Path(payload["outputs"][0]["reader"])
     assert json.loads(interpretation_path.read_text(encoding="utf-8"))["llm_interpretation"]["one_sentence"] == "一句话"
-    assert json.loads(reader_path.read_text(encoding="utf-8"))["content"]["text"] == "abstract"
+    reader_payload = json.loads(reader_path.read_text(encoding="utf-8"))
+    assert reader_payload["content"]["text"] == "abstract"
+    assert reader_payload["figures"]["figures"] == []
