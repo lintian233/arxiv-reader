@@ -34,3 +34,5 @@ data/
 .vscode/
 .idea/
 .DS_Store
+.agents
+.codex
