@@ -31,18 +31,19 @@ class FakeContentLoader:
 class FakeLLMClient:
     def __init__(self) -> None:
         self.seen_text = ""
+        self.model = "fake-model"
 
-    def interpret(self, paper, text: str):
-        self.seen_text = text
-        return LLMInterpretation(
-            one_sentence="一句话",
-            background="背景",
-            problem="问题",
-            method="方法",
-            result="结果",
-            importance="重要性",
-            limitations="限制",
-        )
+    def chat_json(self, messages):
+        self.seen_text = messages[1]["content"]
+        return {
+            "one_sentence": "一句话",
+            "background": "背景",
+            "problem": "问题",
+            "method": "方法",
+            "result": "结果",
+            "importance": "重要性",
+            "limitations": "限制",
+        }
 
 
 def test_read_metadata_from_manifest(sample_paper, tmp_path: Path) -> None:
@@ -177,12 +178,13 @@ def test_explain_content_blocks(sample_paper) -> None:
 
     blocks = explain_content_blocks([content_block], llm, max_input_chars=3)
 
-    assert llm.seen_text == "abc"
+    assert "用于解读的论文内容:\nabc" in llm.seen_text
     assert blocks[0].paper.arxiv_id == sample_paper.arxiv_id
     assert blocks[0].source.used_chars == 3
     assert blocks[0].source.image_count == 0
     assert blocks[0].source.source_url == sample_paper.html_url
     assert blocks[0].llm_interpretation.one_sentence == "一句话"
+    assert blocks[0].llm_metadata.model == "fake-model"
 
 
 def test_write_interpretations(sample_paper, tmp_path: Path) -> None:

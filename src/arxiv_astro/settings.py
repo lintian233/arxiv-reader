@@ -33,7 +33,7 @@ class Settings:
     output_dir: str = "data"
     request_timeout: float = 30.0
     llm_request_timeout: float = 180.0
-    max_input_chars: int = 20000
+    max_input_chars: int = 200000
     debug: bool = False
 
     @classmethod

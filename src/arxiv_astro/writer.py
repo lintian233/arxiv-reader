@@ -163,6 +163,7 @@ def write_reader_outputs(
                 paper=block.paper,
                 source=block.source,
                 llm_interpretation=block.llm_interpretation,
+                llm_metadata=block.llm_metadata,
                 interpreted_date=effective_date,
             ),
             output_root,

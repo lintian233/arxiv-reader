@@ -40,10 +40,11 @@ class FakeLLMClient:
     def __init__(self, interpretation) -> None:
         self.interpretation = interpretation
         self.seen_text = ""
+        self.model = "fake-model"
 
-    def interpret(self, paper, text: str):
-        self.seen_text = text
-        return self.interpretation
+    def chat_json(self, messages):
+        self.seen_text = messages[1]["content"]
+        return self.interpretation.model_dump(mode="json")
 
 
 def test_truncate_for_llm() -> None:
@@ -64,9 +65,10 @@ def test_pipeline_builds_blocks(sample_paper, sample_interpretation) -> None:
     blocks = pipeline.run("astro-ph.CO", 1)
 
     assert len(blocks) == 1
-    assert llm.seen_text == "abc"
+    assert "用于解读的论文内容:\nabc" in llm.seen_text
     assert blocks[0].source.used_chars == 3
     assert blocks[0].llm_interpretation.one_sentence == "一句话总结"
+    assert blocks[0].llm_metadata.model == "fake-model"
     assert blocks[0].content.text == "abcdef"
 
 
@@ -103,7 +105,9 @@ def test_pipeline_uses_content_and_interpretation_cache(sample_paper, sample_int
             raise AssertionError("content loader should not run on cache hit")
 
     class FailingLLMClient:
-        def interpret(self, paper, text: str):
+        model = "fake-model"
+
+        def chat_json(self, messages):
             raise AssertionError("LLM should not run on cache hit")
 
     events = []
@@ -382,17 +386,18 @@ def test_cli_explain_loads_content_and_writes_interpretation(
         def __init__(self, api_key: str, base_url: str, model: str, timeout: float) -> None:
             assert api_key == "key"
             assert timeout == 180.0
+            self.model = model
 
-        def interpret(self, paper, text: str):
-            return LLMInterpretation(
-                one_sentence="一句话",
-                background="背景",
-                problem="问题",
-                method="方法",
-                result="结果",
-                importance="重要性",
-                limitations="限制",
-            )
+        def chat_json(self, messages):
+            return {
+                "one_sentence": "一句话",
+                "background": "背景",
+                "problem": "问题",
+                "method": "方法",
+                "result": "结果",
+                "importance": "重要性",
+                "limitations": "限制",
+            }
 
     monkeypatch.setenv("DEEPSEEK_API_KEY", "key")
     monkeypatch.setenv("OUTPUT_DIR", str(tmp_path))
@@ -407,6 +412,7 @@ def test_cli_explain_loads_content_and_writes_interpretation(
     reader_path = Path(manifest["outputs"][0]["reader"])
     payload = json.loads(interpretation_path.read_text(encoding="utf-8"))
     assert payload["llm_interpretation"]["one_sentence"] == "一句话"
+    assert payload["llm_metadata"]["task"] == "paper_interpretation"
     assert payload["source"]["used_chars"] == len("Full text")
     assert json.loads(reader_path.read_text(encoding="utf-8"))["content"]["text"] == "Full text"
 
@@ -421,9 +427,9 @@ def test_cli_explain_uses_cached_interpretation(monkeypatch, sample_paper, sampl
 
     class FailingExplainLLMClient:
         def __init__(self, api_key: str, base_url: str, model: str, timeout: float) -> None:
-            pass
+            self.model = model
 
-        def interpret(self, paper, text: str):
+        def chat_json(self, messages):
             raise AssertionError("LLM should not run on cache hit")
 
     monkeypatch.setenv("OUTPUT_DIR", str(tmp_path))

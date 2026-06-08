@@ -11,6 +11,7 @@ from arxiv_astro.content_loader import ContentLoader
 from arxiv_astro.explain_pipeline import build_llm_input
 from arxiv_astro.figure_downloader import FigureDownloader
 from arxiv_astro.llm_client import LLMClient
+from arxiv_astro.llm_tasks import PaperInterpretationTask
 from arxiv_astro.models import FigureSet, PaperBlock, PaperContent, PaperContentBlock, PaperMetadata, ReaderPaperBlock
 from arxiv_astro.normalize import build_paper_block, build_reader_block, truncate_for_llm
 
@@ -34,6 +35,7 @@ class Pipeline:
         max_input_chars: int,
         cache_root: Path | None = None,
         figure_downloader: FigureDownloader | None = None,
+        interpretation_task: PaperInterpretationTask | None = None,
     ) -> None:
         self.arxiv_client = arxiv_client
         self.content_loader = content_loader
@@ -41,6 +43,7 @@ class Pipeline:
         self.max_input_chars = max_input_chars
         self.cache_root = cache_root
         self.figure_downloader = figure_downloader
+        self.interpretation_task = interpretation_task or PaperInterpretationTask()
 
     def run(self, category: str, max_results: int, on_update: PipelineUpdate | None = None) -> list[ReaderPaperBlock]:
         papers = self.arxiv_client.fetch_category(category, max_results=max_results)
@@ -93,8 +96,8 @@ class Pipeline:
             return cached
 
         emit_paper_update(on_update, run, status="llm_started", content=content, used_chars=len(used_text))
-        interpretation = self.llm_client.interpret(run.paper, used_text)
-        return build_paper_block(run.paper, content, interpretation, used_text)
+        result = self.interpretation_task.run(self.llm_client, run.paper, used_text, self.max_input_chars)
+        return build_paper_block(run.paper, content, result.value, used_text, result.metadata)
 
     def prepare_llm_input(self, paper: PaperMetadata, content: PaperContent) -> str:
         return truncate_for_llm(build_llm_input_for_paper(paper, content), self.max_input_chars)

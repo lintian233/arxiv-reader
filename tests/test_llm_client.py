@@ -5,7 +5,13 @@ from types import SimpleNamespace
 
 import pytest
 
-from arxiv_astro.llm_client import LLMClient, extra_body, parse_interpretation, system_prompt, user_prompt
+from arxiv_astro.llm_client import LLMClient, extra_body
+from arxiv_astro.llm_tasks.paper_interpretation import (
+    PaperInterpretationTask,
+    parse_interpretation,
+    system_prompt,
+    user_prompt,
+)
 
 
 INTERPRETATION = {
@@ -50,7 +56,7 @@ def test_llm_client_uses_openai_sdk_request(sample_paper) -> None:
         client=fake_client,
     )
 
-    result = client.interpret(sample_paper, "paper text")
+    result = client.chat_json(PaperInterpretationTask().messages(sample_paper, "paper text"))
 
     request = fake_client.completions.kwargs
     assert request["model"] == "model"
@@ -61,7 +67,7 @@ def test_llm_client_uses_openai_sdk_request(sample_paper) -> None:
     assert request["messages"][1]["role"] == "user"
     assert "paper text" in request["messages"][1]["content"]
     assert request["response_format"] == {"type": "json_object"}
-    assert result.one_sentence == "一句话"
+    assert result["one_sentence"] == "一句话"
 
 
 def test_llm_client_requires_api_key() -> None:
@@ -89,3 +95,20 @@ def test_prompts_and_parse_interpretation(sample_paper) -> None:
     assert "不要添加额外字段" in system_prompt()
     assert sample_paper.title in user_prompt(sample_paper, "正文")
     assert parse_interpretation(INTERPRETATION).one_sentence == "一句话"
+
+
+def test_paper_interpretation_task_returns_metadata(sample_paper) -> None:
+    class FakeLLMClient:
+        model = "model"
+
+        def chat_json(self, messages):
+            assert "正文" in messages[1]["content"]
+            return INTERPRETATION
+
+    result = PaperInterpretationTask().run(FakeLLMClient(), sample_paper, "正文", max_input_chars=123)
+
+    assert result.value.one_sentence == "一句话"
+    assert result.metadata.task == "paper_interpretation"
+    assert result.metadata.prompt_version == "v1"
+    assert result.metadata.schema_version == "v1"
+    assert result.metadata.max_input_chars == 123

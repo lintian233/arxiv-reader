@@ -81,6 +81,15 @@ class LLMInterpretation(BaseModel):
     limitations: str
 
 
+class LLMMetadata(BaseModel):
+    provider: str
+    model: str
+    task: str
+    prompt_version: str
+    schema_version: str
+    max_input_chars: int
+
+
 class MetadataBlock(BaseModel):
     paper: PaperMetadata
     fetched_date: str = Field(default_factory=today_str)
@@ -90,6 +99,7 @@ class PaperBlock(BaseModel):
     paper: PaperMetadata
     source: SourceUsage
     llm_interpretation: LLMInterpretation
+    llm_metadata: LLMMetadata | None = None
     interpreted_date: str = Field(default_factory=today_str)
 
 
@@ -105,6 +115,7 @@ class ReaderPaperBlock(BaseModel):
     figures: FigureSet | None = None
     source: SourceUsage
     llm_interpretation: LLMInterpretation
+    llm_metadata: LLMMetadata | None = None
     built_date: str = Field(default_factory=today_str)
 
 
