@@ -127,6 +127,7 @@ def run_explain(input_path: Path, settings: Settings) -> int:
         base_url=settings.base_url,
         model=settings.model,
         timeout=settings.llm_request_timeout,
+        max_output_tokens=settings.llm_max_output_tokens,
     )
     output_root = Path(settings.output_dir)
     blocks = explain_content_blocks_with_cache(content_blocks, llm_client, settings.max_input_chars, output_root)
@@ -157,6 +158,7 @@ def run_pipeline(category: str, max_results: int, settings: Settings) -> int:
             base_url=settings.base_url,
             model=settings.model,
             timeout=settings.llm_request_timeout,
+            max_output_tokens=settings.llm_max_output_tokens,
         ),
         max_input_chars=settings.max_input_chars,
         cache_root=Path(settings.output_dir),

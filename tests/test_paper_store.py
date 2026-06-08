@@ -47,7 +47,7 @@ def test_paper_store_status_and_loaders(sample_paper, sample_interpretation, tmp
     assert status.has_pdf is True
     assert store.load_metadata(sample_paper.arxiv_id).paper.title == sample_paper.title
     assert store.load_content(sample_paper.arxiv_id).content.text == "Full text"
-    assert store.load_interpretation(sample_paper.arxiv_id).llm_interpretation.result == "结果"
+    assert store.load_interpretation(sample_paper.arxiv_id).llm_interpretation.main_results == "核心结果"
     assert store.load_reader(sample_paper.arxiv_id).llm_interpretation.one_sentence == "一句话总结"
 
 

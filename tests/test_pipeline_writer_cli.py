@@ -7,7 +7,7 @@ import arxiv
 
 from arxiv_astro import cli
 from arxiv_astro.cli import build_parser
-from arxiv_astro.models import ContentType, LLMInterpretation, PaperContent, PaperContentBlock
+from arxiv_astro.models import ContentType, LLMInterpretation, LLMMetadata, PaperContent, PaperContentBlock
 from arxiv_astro.normalize import build_paper_block, build_reader_block, truncate_for_llm
 from arxiv_astro.pipeline import Pipeline
 from arxiv_astro.settings import Settings, debug_log, parse_bool, set_debug
@@ -96,7 +96,15 @@ def test_pipeline_emits_updates(sample_paper, sample_interpretation) -> None:
 
 def test_pipeline_uses_content_and_interpretation_cache(sample_paper, sample_interpretation, tmp_path: Path) -> None:
     cached_content = PaperContent(content_type=ContentType.HTML, text="cached full text", text_chars=16)
-    cached_interpretation = build_paper_block(sample_paper, cached_content, sample_interpretation, "cached")
+    cached_metadata = LLMMetadata(
+        provider="openai-compatible",
+        model="fake-model",
+        task="paper_interpretation",
+        prompt_version="v2",
+        schema_version="v2",
+        max_input_chars=20,
+    )
+    cached_interpretation = build_paper_block(sample_paper, cached_content, sample_interpretation, "cached", cached_metadata)
     write_content_block(PaperContentBlock(paper=sample_paper, content=cached_content), tmp_path)
     write_interpretation_block(cached_interpretation, tmp_path)
 
@@ -124,6 +132,37 @@ def test_pipeline_uses_content_and_interpretation_cache(sample_paper, sample_int
     assert blocks[0].content.text == "cached full text"
     assert blocks[0].llm_interpretation.one_sentence == "一句话总结"
     assert [event.get("cache_hit") for event in events if event.get("cache_hit")] == [True, True]
+
+
+def test_pipeline_ignores_interpretation_cache_with_mismatched_metadata(
+    sample_paper,
+    sample_interpretation,
+    tmp_path: Path,
+) -> None:
+    cached_content = PaperContent(content_type=ContentType.HTML, text="cached full text", text_chars=16)
+    stale_metadata = LLMMetadata(
+        provider="openai-compatible",
+        model="fake-model",
+        task="paper_interpretation",
+        prompt_version="v1",
+        schema_version="v1",
+        max_input_chars=20,
+    )
+    cached_interpretation = build_paper_block(sample_paper, cached_content, sample_interpretation, "cached", stale_metadata)
+    write_content_block(PaperContentBlock(paper=sample_paper, content=cached_content), tmp_path)
+    write_interpretation_block(cached_interpretation, tmp_path)
+
+    pipeline = Pipeline(
+        arxiv_client=FakeArxivClient(sample_paper),
+        content_loader=FakeContentLoader(),
+        llm_client=FakeLLMClient(sample_interpretation),
+        max_input_chars=20,
+        cache_root=tmp_path,
+    )
+
+    blocks = pipeline.run("astro-ph.CO", 1)
+
+    assert blocks[0].llm_metadata.prompt_version == "v2"
 
 
 def test_build_reader_block_and_write_outputs(sample_paper, sample_interpretation, tmp_path: Path) -> None:
@@ -162,6 +201,7 @@ def test_settings_from_env(monkeypatch) -> None:
     monkeypatch.setenv("REQUEST_TIMEOUT", "12.5")
     monkeypatch.setenv("LLM_REQUEST_TIMEOUT", "180.5")
     monkeypatch.setenv("MAX_INPUT_CHARS", "123")
+    monkeypatch.setenv("LLM_MAX_OUTPUT_TOKENS", "456")
     monkeypatch.setenv("DEBUG", "true")
 
     settings = Settings.from_env()
@@ -172,6 +212,7 @@ def test_settings_from_env(monkeypatch) -> None:
     assert settings.request_timeout == 12.5
     assert settings.llm_request_timeout == 180.5
     assert settings.max_input_chars == 123
+    assert settings.llm_max_output_tokens == 456
     assert settings.debug is True
     set_debug(False)
 
@@ -383,20 +424,29 @@ def test_cli_explain_loads_content_and_writes_interpretation(
     content_manifest = write_content_outputs([content_block], tmp_path, "astro-ph.IM", max_results=1)
 
     class FakeExplainLLMClient:
-        def __init__(self, api_key: str, base_url: str, model: str, timeout: float) -> None:
+        def __init__(
+            self,
+            api_key: str,
+            base_url: str,
+            model: str,
+            timeout: float,
+            max_output_tokens: int,
+        ) -> None:
             assert api_key == "key"
             assert timeout == 180.0
+            assert max_output_tokens == 12000
             self.model = model
 
         def chat_json(self, messages):
             return {
                 "one_sentence": "一句话",
-                "background": "背景",
-                "problem": "问题",
-                "method": "方法",
-                "result": "结果",
-                "importance": "重要性",
+                "problem_context": "问题背景",
+                "why_it_matters": "为什么重要",
+                "what_the_paper_does": "做了什么",
+                "main_results": "核心结果",
+                "key_figures": [],
                 "limitations": "限制",
+                "field_position": "领域位置",
             }
 
     monkeypatch.setenv("DEEPSEEK_API_KEY", "key")
@@ -423,10 +473,29 @@ def test_cli_explain_uses_cached_interpretation(monkeypatch, sample_paper, sampl
         content=PaperContent(content_type=ContentType.HTML, text="Full text", text_chars=9, source_url=sample_paper.html_url),
     )
     content_manifest = write_content_outputs([content_block], tmp_path, "astro-ph.IM", max_results=1)
-    write_interpretation_block(build_paper_block(sample_paper, content_block.content, sample_interpretation, "Full text"), tmp_path)
+    llm_metadata = LLMMetadata(
+        provider="openai-compatible",
+        model="deepseek-v4-pro",
+        task="paper_interpretation",
+        prompt_version="v2",
+        schema_version="v2",
+        max_input_chars=400000,
+    )
+    write_interpretation_block(
+        build_paper_block(sample_paper, content_block.content, sample_interpretation, "Full text", llm_metadata),
+        tmp_path,
+    )
 
     class FailingExplainLLMClient:
-        def __init__(self, api_key: str, base_url: str, model: str, timeout: float) -> None:
+        def __init__(
+            self,
+            api_key: str,
+            base_url: str,
+            model: str,
+            timeout: float,
+            max_output_tokens: int,
+        ) -> None:
+            assert max_output_tokens == 12000
             self.model = model
 
         def chat_json(self, messages):

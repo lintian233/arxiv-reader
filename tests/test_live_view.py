@@ -4,7 +4,7 @@ from io import StringIO
 
 from rich.console import Console
 
-from arxiv_astro.live_view import PipelineLiveRenderer
+from arxiv_astro.live_view import PipelineLiveRenderer, format_key_figures
 from arxiv_astro.models import ArticleImage, ContentType, LLMInterpretation, PaperBlock, PaperContent, SourceUsage
 
 
@@ -51,12 +51,13 @@ def test_pipeline_live_renderer_tracks_llm_result(sample_paper) -> None:
         source=SourceUsage(content_type=ContentType.HTML, text_chars=9, used_chars=9),
         llm_interpretation=LLMInterpretation(
             one_sentence="这是一句话总结",
-            background="背景",
-            problem="问题",
-            method="方法",
-            result="主要结果",
-            importance="重要性",
+            problem_context="问题背景",
+            why_it_matters="重要性",
+            what_the_paper_does="方法",
+            main_results="主要结果",
+            key_figures=[{"index": 1, "plain_caption": "关键趋势", "why_key": "支撑结果", "evidence": None}],
             limitations="限制",
+            field_position="领域位置",
         ),
     )
 
@@ -74,7 +75,9 @@ def test_pipeline_live_renderer_tracks_llm_result(sample_paper) -> None:
 
     row = renderer.rows[sample_paper.arxiv_id]
     assert row.one_sentence == "这是一句话总结"
-    assert row.result == "主要结果"
+    assert row.main_results == "主要结果"
+    assert row.key_figures == "图1: 关键趋势"
+    assert format_key_figures(block) == "图1: 关键趋势"
 
     output = StringIO()
     Console(file=output, force_terminal=False, width=220).print(renderer.render())
@@ -82,6 +85,7 @@ def test_pipeline_live_renderer_tracks_llm_result(sample_paper) -> None:
     assert "LLM interpretations" in rendered
     assert "这是一句话总结" in rendered
     assert "主要结果" in rendered
+    assert "关键趋势" in rendered
 
 
 def test_pipeline_live_renderer_context_manager(sample_paper) -> None:

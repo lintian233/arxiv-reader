@@ -10,6 +10,7 @@ from arxiv_astro.content_loader import ContentLoader
 from arxiv_astro.explain_pipeline import explain_content_blocks
 from arxiv_astro.figure_downloader import FigureDownloader
 from arxiv_astro.llm_client import LLMClient
+from arxiv_astro.llm_tasks import PaperInterpretationTask
 from arxiv_astro.metadata_io import manifest_context, metadata_paths_from_manifest
 from arxiv_astro.models import FigureSet, PaperBlock, PaperContentBlock, PaperMetadata
 from arxiv_astro.settings import debug_log
@@ -98,15 +99,17 @@ def explain_content_blocks_with_cache(
 ) -> list[PaperBlock]:
     misses = []
     blocks = []
+    task = PaperInterpretationTask()
+    expected_metadata = task.metadata(llm_client, max_input_chars)
     for content_block in content_blocks:
-        cached = load_cached_interpretation(output_root, content_block.paper)
+        cached = load_cached_interpretation(output_root, content_block.paper, expected_metadata=expected_metadata)
         if cached:
             debug_log("interpretation cache hit", arxiv_id=content_block.paper.arxiv_id)
             blocks.append(cached)
         else:
             debug_log("interpretation cache miss", arxiv_id=content_block.paper.arxiv_id)
             misses.append(content_block)
-    blocks.extend(explain_content_blocks(misses, llm_client, max_input_chars))
+    blocks.extend(explain_content_blocks(misses, llm_client, max_input_chars, task=task))
     return blocks
 
 

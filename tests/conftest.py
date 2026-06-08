@@ -32,10 +32,11 @@ def sample_paper() -> PaperMetadata:
 def sample_interpretation() -> LLMInterpretation:
     return LLMInterpretation(
         one_sentence="一句话总结",
-        background="背景",
-        problem="问题",
-        method="方法",
-        result="结果",
-        importance="重要性",
+        problem_context="问题背景",
+        why_it_matters="为什么重要",
+        what_the_paper_does="做了什么",
+        main_results="核心结果",
+        key_figures=[],
         limitations="限制",
+        field_position="领域位置",
     )

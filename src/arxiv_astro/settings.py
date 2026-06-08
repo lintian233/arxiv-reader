@@ -33,7 +33,8 @@ class Settings:
     output_dir: str = "data"
     request_timeout: float = 30.0
     llm_request_timeout: float = 180.0
-    max_input_chars: int = 200000
+    max_input_chars: int = 400000
+    llm_max_output_tokens: int = 12000
     debug: bool = False
 
     @classmethod
@@ -46,6 +47,7 @@ class Settings:
             request_timeout=float(os.getenv("REQUEST_TIMEOUT", cls.request_timeout)),
             llm_request_timeout=float(os.getenv("LLM_REQUEST_TIMEOUT", cls.llm_request_timeout)),
             max_input_chars=int(os.getenv("MAX_INPUT_CHARS", cls.max_input_chars)),
+            llm_max_output_tokens=int(os.getenv("LLM_MAX_OUTPUT_TOKENS", cls.llm_max_output_tokens)),
             debug=parse_bool(os.getenv("DEBUG")),
         )
         set_debug(settings.debug)

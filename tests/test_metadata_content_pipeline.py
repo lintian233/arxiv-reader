@@ -37,12 +37,13 @@ class FakeLLMClient:
         self.seen_text = messages[1]["content"]
         return {
             "one_sentence": "一句话",
-            "background": "背景",
-            "problem": "问题",
-            "method": "方法",
-            "result": "结果",
-            "importance": "重要性",
+            "problem_context": "问题背景",
+            "why_it_matters": "为什么重要",
+            "what_the_paper_does": "做了什么",
+            "main_results": "核心结果",
+            "key_figures": [{"index": 1, "plain_caption": "图展示趋势", "why_key": "支撑核心结果", "evidence": None}],
             "limitations": "限制",
+            "field_position": "领域位置",
         }
 
 

@@ -18,6 +18,7 @@ class LLMClient:
         timeout: float = 60.0,
         reasoning_effort: str = "high",
         thinking_enabled: bool = False,
+        max_output_tokens: int = 12000,
     ) -> None:
         if not api_key:
             raise ValueError("LLM API key is required")
@@ -26,6 +27,7 @@ class LLMClient:
         self.model = model
         self.reasoning_effort = reasoning_effort
         self.thinking_enabled = thinking_enabled
+        self.max_output_tokens = max_output_tokens
         self._client = client or OpenAI(
             api_key=api_key,
             base_url=self.base_url,
@@ -41,6 +43,7 @@ class LLMClient:
             reasoning_effort=self.reasoning_effort,
             extra_body=extra_body(self.thinking_enabled),
             response_format={"type": "json_object"},
+            max_tokens=self.max_output_tokens,
         )
         content = response.choices[0].message.content
         if not isinstance(content, str):

@@ -71,14 +71,22 @@ class SourceUsage(BaseModel):
     image_count: int = 0
 
 
+class KeyFigureInsight(BaseModel):
+    index: int = Field(ge=1)
+    plain_caption: str
+    why_key: str
+    evidence: str | None = None
+
+
 class LLMInterpretation(BaseModel):
     one_sentence: str
-    background: str
-    problem: str
-    method: str
-    result: str
-    importance: str
+    problem_context: str
+    why_it_matters: str
+    what_the_paper_does: str
+    main_results: str
+    key_figures: list[KeyFigureInsight] = Field(default_factory=list)
     limitations: str
+    field_position: str
 
 
 class LLMMetadata(BaseModel):

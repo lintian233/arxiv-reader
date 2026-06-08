@@ -83,7 +83,12 @@ class Pipeline:
         used_text: str,
         on_update: PipelineUpdate | None = None,
     ) -> PaperBlock:
-        cached = load_cached_interpretation(self.cache_root, run.paper) if self.cache_root else None
+        expected_metadata = self.interpretation_task.metadata(self.llm_client, self.max_input_chars)
+        cached = (
+            load_cached_interpretation(self.cache_root, run.paper, expected_metadata=expected_metadata)
+            if self.cache_root
+            else None
+        )
         if cached:
             emit_paper_update(
                 on_update,

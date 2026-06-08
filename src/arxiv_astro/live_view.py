@@ -31,7 +31,8 @@ class PaperRow:
     text_chars: int = 0
     image_count: int = 0
     one_sentence: str = ""
-    result: str = ""
+    main_results: str = ""
+    key_figures: str = ""
 
 
 class PipelineLiveRenderer:
@@ -76,7 +77,8 @@ class PipelineLiveRenderer:
         block: PaperBlock | None = payload.get("block")
         if block:
             row.one_sentence = block.llm_interpretation.one_sentence
-            row.result = block.llm_interpretation.result
+            row.main_results = block.llm_interpretation.main_results
+            row.key_figures = format_key_figures(block)
         self.rows[paper.arxiv_id] = row
         self.refresh()
 
@@ -109,7 +111,11 @@ class PipelineLiveRenderer:
         return table
 
     def render_interpretations(self) -> Panel:
-        completed_rows = [row for row in sorted(self.rows.values(), key=lambda item: item.index) if row.one_sentence or row.result]
+        completed_rows = [
+            row
+            for row in sorted(self.rows.values(), key=lambda item: item.index)
+            if row.one_sentence or row.main_results or row.key_figures
+        ]
         if not completed_rows:
             return Panel("Waiting for LLM interpretations...", title="LLM interpretations")
 
@@ -122,7 +128,17 @@ class PipelineLiveRenderer:
                 body.append("Summary: ", style="cyan")
                 body.append(row.one_sentence)
                 body.append("\n")
-            if row.result:
-                body.append("Result: ", style="green")
-                body.append(row.result)
+            if row.main_results:
+                body.append("Core result: ", style="green")
+                body.append(row.main_results)
+            if row.key_figures:
+                body.append("\nKey figures: ", style="magenta")
+                body.append(row.key_figures)
         return Panel(body, title="LLM interpretations")
+
+
+def format_key_figures(block: PaperBlock) -> str:
+    return "; ".join(
+        f"图{figure.index}: {figure.plain_caption}"
+        for figure in block.llm_interpretation.key_figures
+    )

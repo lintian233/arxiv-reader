@@ -16,12 +16,13 @@ from arxiv_astro.llm_tasks.paper_interpretation import (
 
 INTERPRETATION = {
     "one_sentence": "一句话",
-    "background": "背景",
-    "problem": "问题",
-    "method": "方法",
-    "result": "结果",
-    "importance": "重要性",
+    "problem_context": "问题背景",
+    "why_it_matters": "为什么重要",
+    "what_the_paper_does": "做了什么",
+    "main_results": "核心结果",
+    "key_figures": [{"index": 1, "plain_caption": "图展示趋势", "why_key": "支撑核心结果", "evidence": None}],
     "limitations": "限制",
+    "field_position": "领域位置",
 }
 
 
@@ -67,6 +68,7 @@ def test_llm_client_uses_openai_sdk_request(sample_paper) -> None:
     assert request["messages"][1]["role"] == "user"
     assert "paper text" in request["messages"][1]["content"]
     assert request["response_format"] == {"type": "json_object"}
+    assert request["max_tokens"] == 12000
     assert result["one_sentence"] == "一句话"
 
 
@@ -92,6 +94,7 @@ def test_extra_body_can_disable_thinking() -> None:
 def test_prompts_and_parse_interpretation(sample_paper) -> None:
     assert "合法 JSON" in system_prompt()
     assert "one_sentence" in system_prompt()
+    assert "key_figures" in system_prompt()
     assert "不要添加额外字段" in system_prompt()
     assert sample_paper.title in user_prompt(sample_paper, "正文")
     assert parse_interpretation(INTERPRETATION).one_sentence == "一句话"
@@ -109,6 +112,7 @@ def test_paper_interpretation_task_returns_metadata(sample_paper) -> None:
 
     assert result.value.one_sentence == "一句话"
     assert result.metadata.task == "paper_interpretation"
-    assert result.metadata.prompt_version == "v1"
-    assert result.metadata.schema_version == "v1"
+    assert result.value.key_figures[0].index == 1
+    assert result.metadata.prompt_version == "v2"
+    assert result.metadata.schema_version == "v2"
     assert result.metadata.max_input_chars == 123
