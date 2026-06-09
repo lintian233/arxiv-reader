@@ -7,9 +7,11 @@ from rich.console import Console
 
 from arxiv_astro.cli_render import (
     render_fetch_summary,
+    render_next_steps,
     render_output_path,
     render_pipeline_summary,
     render_selection_summary,
+    render_stage,
 )
 from arxiv_astro.models import (
     ContentType,
@@ -93,6 +95,19 @@ def test_render_output_path() -> None:
     render_output_path("saved", Path("data/runs/run/manifest.json"), console)
 
     assert "saved: data/runs/run/manifest.json" in output.getvalue()
+
+
+def test_render_stage_and_next_steps() -> None:
+    console, output = capture_console()
+
+    render_stage("1/4", "Fetch candidates", "category: astro-ph  candidates: 60", console)
+    render_next_steps(["arxiv-astro report --input data/runs/run/manifest.json"], console)
+
+    text = output.getvalue()
+    assert "[1/4] Fetch candidates" in text
+    assert "category: astro-ph  candidates: 60" in text
+    assert "Next:" in text
+    assert "arxiv-astro report --input data/runs/run/manifest.json" in text
 
 
 def test_render_pipeline_summary_shows_all_completed_blocks(sample_paper) -> None:

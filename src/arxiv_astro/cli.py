@@ -12,9 +12,11 @@ from dotenv import load_dotenv
 from arxiv_astro.arxiv_client import ArxivClient
 from arxiv_astro.cli_render import (
     render_fetch_summary,
+    render_next_steps,
     render_output_path,
     render_pipeline_summary,
     render_selection_summary,
+    render_stage,
 )
 from arxiv_astro.content_io import read_content_blocks
 from arxiv_astro.content_loader import ContentLoader
@@ -43,30 +45,30 @@ from arxiv_astro.writer import (
 
 
 def build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(description="Fetch arXiv papers and generate LLM interpretation blocks.")
+    parser = argparse.ArgumentParser(description="Read recent arXiv papers with LLM-assisted selection and interpretation.")
     subparsers = parser.add_subparsers(dest="command")
 
-    fetch_parser = subparsers.add_parser("fetch", help="Fetch arXiv metadata only")
+    fetch_parser = subparsers.add_parser("fetch", help="Fetch recent arXiv paper metadata")
     add_common_args(fetch_parser)
 
-    run_parser = subparsers.add_parser("run", help="Fetch papers and run the full LLM pipeline")
+    run_parser = subparsers.add_parser("run", help="Select, read, and interpret recent arXiv papers")
     add_common_args(run_parser)
-    run_parser.add_argument("--fetch-results", type=int, help="Number of metadata candidates to fetch before selection")
-    run_parser.add_argument("--interests", help="Paper interests used by the LLM selector")
+    run_parser.add_argument("--fetch-results", type=int, help="Number of recent candidates to fetch before LLM selection")
+    run_parser.add_argument("--interests", help="Research interests used to select papers before full reading")
 
-    content_parser = subparsers.add_parser("content", help="Load full text and images from metadata")
+    content_parser = subparsers.add_parser("content", help="Load full text and figures from fetched metadata")
     content_parser.add_argument("--input", required=True, help="metadata.json or manifest.json path from fetch")
     content_parser.add_argument("--debug", action="store_true", help="Print debug information to stderr")
 
-    explain_parser = subparsers.add_parser("explain", help="Generate LLM interpretations from content")
+    explain_parser = subparsers.add_parser("explain", help="Generate LLM interpretations from loaded content")
     explain_parser.add_argument("--input", required=True, help="content.json or manifest.json path from content")
     explain_parser.add_argument("--debug", action="store_true", help="Print debug information to stderr")
 
-    report_parser = subparsers.add_parser("report", help="Generate a static HTML report from reader blocks")
+    report_parser = subparsers.add_parser("report", help="Build a local HTML reading report")
     report_parser.add_argument("--input", required=True, help="reader.json or manifest.json path from run/explain")
     report_parser.add_argument("--debug", action="store_true", help="Print debug information to stderr")
 
-    serve_parser = subparsers.add_parser("serve", help="Serve OUTPUT_DIR over localhost for reports")
+    serve_parser = subparsers.add_parser("serve", help="Serve local reports and paper assets on localhost")
     serve_parser.add_argument("--port", type=int, default=8765, help="Local HTTP port")
     serve_parser.add_argument("--debug", action="store_true", help="Print debug information to stderr")
 
@@ -75,8 +77,8 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def add_common_args(parser: argparse.ArgumentParser) -> None:
-    parser.add_argument("--category", help="arXiv category, for example astro-ph.CO")
-    parser.add_argument("--max-results", type=int, default=5, help="Number of latest papers to fetch")
+    parser.add_argument("--category", help="arXiv category or group, e.g. astro-ph, astro-ph.IM, astro-ph.IM,astro-ph.HE")
+    parser.add_argument("--max-results", type=int, default=5, help="Number of papers to read after optional selection")
     parser.add_argument("--debug", action="store_true", help="Print debug information to stderr")
 
 
@@ -125,10 +127,12 @@ def main(argv: list[str] | None = None) -> int:
 
 
 def run_fetch(category: str, max_results: int, settings: Settings) -> int:
+    render_stage("1/1", "Fetch recent arXiv metadata", f"category: {category}  papers: {max_results}")
     papers = ArxivClient(timeout=settings.request_timeout).fetch_category(category, max_results)
     debug_log("writing metadata", output_dir=settings.output_dir)
     output_path = write_fetch_outputs(papers, Path(settings.output_dir), category, max_results)
     render_fetch_summary(papers, category, max_results, output_path)
+    render_next_steps([f"arxiv-astro content --input {output_path}"])
     print(output_path)
     return 0
 
@@ -221,16 +225,24 @@ def run_pipeline(
         if effective_interests
         else None,
     )
+    candidate_count = effective_fetch_results if effective_interests and effective_fetch_results else max_results
+    render_stage("1/4", "Fetch candidates", f"category: {category}  candidates: {candidate_count}")
     candidates = pipeline.fetch_candidates(category, max_results, effective_fetch_results, effective_interests)
     render_fetch_summary(
         candidates,
         category,
-        effective_fetch_results if effective_interests and effective_fetch_results else max_results,
+        candidate_count,
+    )
+    render_stage(
+        "2/4",
+        "Select papers",
+        f"interests: {effective_interests or 'not set'}  requested: {max_results}",
     )
     papers = pipeline.select_papers(candidates, category, max_results, effective_fetch_results, effective_interests)
     if pipeline.selection_block:
         render_selection_summary(pipeline.selection_block, candidates)
 
+    render_stage("3/4", "Read and interpret", f"selected papers: {len(papers)}")
     with PipelineLiveRenderer() as live:
         emit_pipeline_started(live.on_update, papers)
         blocks = [
@@ -244,7 +256,14 @@ def run_pipeline(
         else None
     )
     output_path = write_reader_outputs(blocks, Path(settings.output_dir), category, max_results, selection_path=selection_path)
+    render_stage("4/4", "Saved outputs", "reader manifest written")
     render_output_path("saved", output_path)
+    render_next_steps(
+        [
+            f"arxiv-astro report --input {output_path}",
+            "arxiv-astro serve --port 8765",
+        ]
+    )
     print(output_path)
     return 0
 
@@ -252,6 +271,8 @@ def run_pipeline(
 def run_report(input_path: Path, settings: Settings) -> int:
     debug_log("generating html report", input=str(input_path), output_dir=settings.output_dir)
     output_path = generate_report(input_path, Path(settings.output_dir))
+    render_output_path("report", output_path)
+    render_next_steps(["arxiv-astro serve --port 8765"])
     print(output_path)
     return 0
 

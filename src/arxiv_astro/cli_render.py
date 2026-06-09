@@ -13,6 +13,23 @@ def default_console() -> Console:
     return Console(stderr=True)
 
 
+def render_stage(step: str, title: str, detail: str = "", console: Console | None = None) -> None:
+    target = console or default_console()
+    target.print()
+    target.print(Text(f"[{step}] {title}", style="bold"))
+    if detail:
+        target.print(Text(detail, style="dim"))
+
+
+def render_next_steps(commands: list[str], console: Console | None = None) -> None:
+    if not commands:
+        return
+    target = console or default_console()
+    target.print(Text("Next:", style="bold"))
+    for command in commands:
+        target.print(Text(command, style="dim"))
+
+
 def render_fetch_summary(
     papers: list[PaperMetadata],
     category: str,
