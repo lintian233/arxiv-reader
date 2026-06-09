@@ -1,77 +1,144 @@
 # arxiv-astro
 
-Minimal pipeline for fetching papers from one arXiv category, extracting usable text from HTML/PDF/abstract, sending it to an OpenAI-compatible LLM, and writing per-paper JSON blocks for an arXiv reader.
+A local arXiv research reader for discovering, selecting, and interpreting recent astronomy papers with LLM assistance.
 
-## Run
+![arxiv-astro reader preview](docs/intro.png)
 
-```bash
-python -m arxiv_astro.cli --category astro-ph.CO --max-results 5
-python -m arxiv_astro.cli fetch --category astro-ph.CO --max-results 5
-python -m arxiv_astro.cli fetch --category astro-ph.CO --max-results 5 --debug
-python -m arxiv_astro.cli content --input data/runs/2026-06-07_astro-ph.CO/manifest.json
-python -m arxiv_astro.cli explain --input data/runs/2026-06-07_astro-ph.CO/manifest.json
-python -m arxiv_astro.cli run --category astro-ph.CO --max-results 5
-```
 
-The root command defaults to metadata-only `fetch`. Use `run` explicitly for the full LLM pipeline.
-Use `content` to load full text and images from a `metadata.json` or fetch `manifest.json`.
-Use `explain` to generate LLM interpretation blocks from a `content.json` or content `manifest.json`.
-The `run` command renders a live Rich table on stderr with each paper's ID, title, stage, content source, text length, and image count. Completed LLM interpretations are rendered below the table as per-paper details.
+## What Is This?
 
-Outputs are organized by stable arXiv ID:
+`arxiv-astro` is a local reading pipeline for astronomy papers.
+
+Input:
+
+- an arXiv category or category group
+- optional research interests
+- an OpenAI-compatible LLM endpoint
+
+Pipeline:
 
 ```text
-data/
-  papers/
-    2401.12345v1/
-      metadata.json
-      content.json
-      figures.json
-      interpretation.json
-      reader.json
-      paper.pdf
-      figures/
-        fig_001.png
-  runs/
-    2026-06-07_astro-ph.CO/
-      manifest.json
+fetch metadata -> select papers -> load text and figures -> interpret -> report
 ```
 
-`fetch` writes `metadata.json` plus a run manifest. `content` writes `content.json`, downloads HTML figures to `figures/`, writes `figures.json`, and writes a run manifest. `explain` writes `interpretation.json` and `reader.json` plus a run manifest. `run` writes the complete per-paper reader assets and one manifest in a single pass.
+## Quick Start
 
-Existing `content.json` and `interpretation.json` files are treated as cache. `content`, `explain`, and `run` reuse them by default, so already-loaded full text/images and already-generated LLM interpretations are not recomputed.
-
-Debug logging can also be enabled globally:
+1. Install locally:
 
 ```bash
-DEBUG=1 python -m arxiv_astro.cli fetch --category astro-ph.CO --max-results 5
+pip install -e .
 ```
 
-Environment variables:
+Check available CLI options:
+
+```bash
+arxiv-astro -h
+```
+
+2. Configure DeepSeek in `.env`:
 
 ```bash
 DEEPSEEK_API_KEY=your-api-key
 DEEPSEEK_BASE_URL=https://api.deepseek.com
 DEEPSEEK_MODEL=deepseek-v4-pro
-LLM_REQUEST_TIMEOUT=180
 ```
 
-The LLM client uses the OpenAI SDK against the DeepSeek-compatible endpoint with:
-
-```python
-reasoning_effort="high"
-extra_body={"thinking": {"type": "enabled"}}
-```
-
-## Test
+3. Run a complete reading pipeline:
 
 ```bash
-pytest
+arxiv-astro run \
+  --category astro-ph \
+  --fetch-results 10 \
+  --max-results 2 \
+  --interests "papers related to the FAST radio telescope and radio interferometric methods"
 ```
 
-Real network integration tests are opt-in:
+4. Generate an HTML report from the final manifest:
 
 ```bash
-RUN_REAL_NETWORK=1 pytest tests/integration --no-cov
-RUN_REAL_NETWORK=1 ARXIV_ASTRO_TEST_CATEGORY=astro-ph.IM pytest tests/integration --no-cov
+arxiv-astro report --input data/runs/2026-date_astro-ph.IM/manifest.json
 ```
+
+5. Serve reports and downloaded figures locally:
+
+```bash
+arxiv-astro serve --port 8765
+```
+
+Open:
+
+```text
+http://localhost:8765/
+```
+
+## Configuration
+
+For normal use, you only need to set the API key. Optionally change the model name if your DeepSeek account uses a different model.
+
+```bash
+DEEPSEEK_API_KEY=your-api-key
+DEEPSEEK_MODEL=deepseek-v4-pro
+```
+
+You can put them in a `.env` file or export them in your shell.
+
+Advanced options:
+
+| Variable | Default | Purpose |
+| --- | --- | --- |
+| `DEEPSEEK_API_KEY` | empty | API key used by the OpenAI-compatible LLM client. Required for selection and interpretation. |
+| `DEEPSEEK_BASE_URL` | `https://api.deepseek.com` | OpenAI-compatible API endpoint. Usually does not need to change. |
+| `DEEPSEEK_MODEL` | `deepseek-v4-pro` | Model used for paper selection and interpretation. |
+| `OUTPUT_DIR` | `data` | Root directory for paper cache, run manifests, figures, and reports. |
+| `REQUEST_TIMEOUT` | `30` | Timeout in seconds for arXiv/content/figure HTTP requests. |
+| `LLM_REQUEST_TIMEOUT` | `180` | Timeout in seconds for LLM requests. |
+| `MAX_INPUT_CHARS` | `400000` | Maximum paper text characters sent to the interpretation task. |
+| `LLM_MAX_OUTPUT_TOKENS` | `12000` | Maximum output tokens requested from the LLM. |
+| `PAPER_INTERESTS` | empty | Default research interests used by `run` when `--interests` is omitted. |
+| `FETCH_RESULTS` | `100` | Default number of metadata candidates fetched before selection. |
+| `SELECTION_MAX_INPUT_CHARS` | `220000` | Maximum metadata prompt size for paper selection. |
+| `SELECTION_SUMMARY_MAX_CHARS` | `4000` | Maximum abstract characters per paper used during selection. |
+| `DEBUG` | false | Enables debug logging when set to `1`, `true`, `yes`, or `on`. |
+
+Debug logging example:
+
+```bash
+DEBUG=1 arxiv-astro fetch --category astro-ph.IM --max-results 5
+```
+
+## Category Syntax
+
+Single category:
+
+```bash
+--category astro-ph.IM
+```
+
+Astrophysics archive group:
+
+```bash
+--category astro-ph
+```
+
+`astro-ph` expands to:
+
+```text
+astro-ph.CO
+astro-ph.EP
+astro-ph.GA
+astro-ph.HE
+astro-ph.IM
+astro-ph.SR
+```
+
+Multiple categories:
+
+```bash
+--category astro-ph.IM,astro-ph.HE
+```
+
+The category expression is sent as one arXiv API OR query where possible.
+
+## License
+
+This project is licensed under the GNU General Public License v2.0. See [LICENSE](LICENSE).
