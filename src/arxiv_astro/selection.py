@@ -4,7 +4,7 @@ from dataclasses import dataclass
 
 from arxiv_astro.llm_client import LLMClient
 from arxiv_astro.llm_tasks import PaperSelectionTask
-from arxiv_astro.models import PaperMetadata, SelectionBlock, SelectedPaper
+from arxiv_astro.models import PaperMetadata, PaperSelectionSummary, SelectionBlock, SelectedPaper
 
 
 class SelectionError(RuntimeError):
@@ -53,6 +53,12 @@ class PaperSelector:
             raise SelectionError(str(exc)) from exc
 
         selected = normalize_selected(task_result.value.selected, papers, max_results)
+        summary = build_selection_summary(
+            candidate_count=len(papers),
+            requested_count=max_results,
+            selected_count=len(selected),
+            shortfall_reason=task_result.value.shortfall_reason,
+        )
         selected_ids = [item.arxiv_id for item in selected]
         by_id = {paper.arxiv_id: paper for paper in papers}
         selected_papers = [by_id[arxiv_id] for arxiv_id in selected_ids]
@@ -63,6 +69,7 @@ class PaperSelector:
             interests=interests,
             candidate_ids=[paper.arxiv_id for paper in papers],
             selected=selected,
+            summary=summary,
             llm_metadata=task_result.metadata,
         )
         return SelectionResult(papers=selected_papers, block=block)
@@ -84,3 +91,19 @@ def normalize_selected(
         if len(normalized) >= max_results:
             break
     return normalized
+
+
+def build_selection_summary(
+    candidate_count: int,
+    requested_count: int,
+    selected_count: int,
+    shortfall_reason: str,
+) -> PaperSelectionSummary:
+    shortfall = max(0, requested_count - selected_count)
+    return PaperSelectionSummary(
+        candidate_count=candidate_count,
+        requested_count=requested_count,
+        selected_count=selected_count,
+        shortfall=shortfall,
+        shortfall_reason=shortfall_reason.strip() if shortfall else "",
+    )

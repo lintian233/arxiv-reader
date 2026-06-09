@@ -10,13 +10,14 @@ import arxiv
 from dotenv import load_dotenv
 
 from arxiv_astro.arxiv_client import ArxivClient
+from arxiv_astro.cli_render import render_fetch_summary, render_output_path, render_selection_summary
 from arxiv_astro.content_io import read_content_blocks
 from arxiv_astro.content_loader import ContentLoader
 from arxiv_astro.figure_downloader import FigureDownloader
 from arxiv_astro.llm_client import LLMClient
 from arxiv_astro.live_view import PipelineLiveRenderer
 from arxiv_astro.metadata_io import read_metadata
-from arxiv_astro.pipeline import Pipeline
+from arxiv_astro.pipeline import PaperRun, Pipeline, emit_pipeline_started
 from arxiv_astro.report import generate_report
 from arxiv_astro.selection import PaperSelector, SelectionError
 from arxiv_astro.settings import Settings, debug_log, set_debug
@@ -122,6 +123,7 @@ def run_fetch(category: str, max_results: int, settings: Settings) -> int:
     papers = ArxivClient(timeout=settings.request_timeout).fetch_category(category, max_results)
     debug_log("writing metadata", output_dir=settings.output_dir)
     output_path = write_fetch_outputs(papers, Path(settings.output_dir), category, max_results)
+    render_fetch_summary(papers, category, max_results, output_path)
     print(output_path)
     return 0
 
@@ -214,20 +216,29 @@ def run_pipeline(
         if effective_interests
         else None,
     )
+    candidates = pipeline.fetch_candidates(category, max_results, effective_fetch_results, effective_interests)
+    render_fetch_summary(
+        candidates,
+        category,
+        effective_fetch_results if effective_interests and effective_fetch_results else max_results,
+    )
+    papers = pipeline.select_papers(candidates, category, max_results, effective_fetch_results, effective_interests)
+    if pipeline.selection_block:
+        render_selection_summary(pipeline.selection_block, candidates)
+
     with PipelineLiveRenderer() as live:
-        blocks = pipeline.run(
-            category,
-            max_results,
-            on_update=live.on_update,
-            fetch_results=effective_fetch_results,
-            interests=effective_interests,
-        )
+        emit_pipeline_started(live.on_update, papers)
+        blocks = [
+            pipeline.process_paper(PaperRun(paper=paper, index=index, total=len(papers)), live.on_update)
+            for index, paper in enumerate(papers, start=1)
+        ]
     selection_path = (
         write_selection_block(pipeline.selection_block, Path(settings.output_dir))
         if pipeline.selection_block
         else None
     )
     output_path = write_reader_outputs(blocks, Path(settings.output_dir), category, max_results, selection_path=selection_path)
+    render_output_path("saved", output_path)
     print(output_path)
     return 0
 

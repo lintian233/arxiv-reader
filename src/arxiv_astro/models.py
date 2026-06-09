@@ -107,6 +107,15 @@ class SelectedPaper(BaseModel):
 
 class PaperSelectionResult(BaseModel):
     selected: list[SelectedPaper] = Field(default_factory=list)
+    shortfall_reason: str = ""
+
+
+class PaperSelectionSummary(BaseModel):
+    candidate_count: int
+    requested_count: int
+    selected_count: int
+    shortfall: int
+    shortfall_reason: str = ""
 
 
 class SelectionBlock(BaseModel):
@@ -116,6 +125,7 @@ class SelectionBlock(BaseModel):
     interests: str
     candidate_ids: list[str]
     selected: list[SelectedPaper]
+    summary: PaperSelectionSummary
     llm_metadata: LLMMetadata
     selection_date: str = Field(default_factory=today_str)
 

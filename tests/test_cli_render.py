@@ -1,0 +1,80 @@
+from __future__ import annotations
+
+from io import StringIO
+from pathlib import Path
+
+from rich.console import Console
+
+from arxiv_astro.cli_render import render_fetch_summary, render_output_path, render_selection_summary
+from arxiv_astro.models import LLMMetadata, PaperSelectionSummary, SelectionBlock, SelectedPaper
+
+
+def capture_console() -> tuple[Console, StringIO]:
+    output = StringIO()
+    return Console(file=output, width=140, force_terminal=False), output
+
+
+def test_render_fetch_summary_shows_metadata(sample_paper) -> None:
+    console, output = capture_console()
+
+    render_fetch_summary([sample_paper], "astro-ph.IM", 1, Path("data/runs/run/manifest.json"), console)
+
+    text = output.getvalue()
+    assert "arxiv-astro fetch: astro-ph.IM (1/1)" in text
+    assert sample_paper.arxiv_id in text
+    assert sample_paper.primary_category in text
+    assert sample_paper.title in text
+    assert "saved: data/runs/run/manifest.json" in text
+
+
+def test_render_selection_summary_shows_selected_papers(sample_paper) -> None:
+    console, output = capture_console()
+    selection = SelectionBlock(
+        category="astro-ph",
+        fetch_results=100,
+        max_results=1,
+        interests="FRB",
+        candidate_ids=[sample_paper.arxiv_id],
+        selected=[
+            SelectedPaper(
+                arxiv_id=sample_paper.arxiv_id,
+                relevance=5,
+                matched_interests=["FRB", "transient"],
+                reason="matches the configured interests",
+            )
+        ],
+        summary=PaperSelectionSummary(
+            candidate_count=100,
+            requested_count=3,
+            selected_count=1,
+            shortfall=2,
+            shortfall_reason="候选中只有一篇高度相关论文。",
+        ),
+        llm_metadata=LLMMetadata(
+            provider="openai-compatible",
+            model="model",
+            task="paper_selection",
+            prompt_version="v1",
+            schema_version="v1",
+            max_input_chars=10000,
+        ),
+    )
+
+    render_selection_summary(selection, [sample_paper], console)
+
+    text = output.getvalue()
+    assert "LLM selection: 1/3" in text
+    assert "candidates: 100  requested: 3  selected: 1  shortfall: 2" in text
+    assert "shortfall reason: 候选中只有一篇高度相关论文。" in text
+    assert sample_paper.arxiv_id in text
+    assert "FRB, transient" in text
+    assert sample_paper.title in text
+    assert "matches the configured interests" in text
+
+
+def test_render_output_path() -> None:
+    console, output = capture_console()
+
+    render_output_path("saved", Path("data/runs/run/manifest.json"), console)
+
+    assert "saved: data/runs/run/manifest.json" in output.getvalue()

@@ -72,12 +72,33 @@ class Pipeline:
         fetch_results: int | None = None,
         interests: str | None = None,
     ) -> list[PaperMetadata]:
+        papers = self.fetch_candidates(category, max_results, fetch_results, interests)
+        return self.select_papers(papers, category, max_results, fetch_results, interests)
+
+    def fetch_candidates(
+        self,
+        category: str,
+        max_results: int,
+        fetch_results: int | None = None,
+        interests: str | None = None,
+    ) -> list[PaperMetadata]:
+        self.selection_block = None
         effective_fetch_results = fetch_results if interests else max_results
-        papers = self.arxiv_client.fetch_category(category, max_results=effective_fetch_results or max_results)
+        return self.arxiv_client.fetch_category(category, max_results=effective_fetch_results or max_results)
+
+    def select_papers(
+        self,
+        papers: list[PaperMetadata],
+        category: str,
+        max_results: int,
+        fetch_results: int | None = None,
+        interests: str | None = None,
+    ) -> list[PaperMetadata]:
         if not interests:
             return papers
         if not self.paper_selector:
             raise SelectionError("paper selector is required when interests are set")
+        effective_fetch_results = fetch_results if interests else max_results
         selection = self.paper_selector.select(
             papers,
             interests,

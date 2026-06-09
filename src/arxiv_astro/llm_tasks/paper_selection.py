@@ -63,14 +63,19 @@ def system_prompt() -> str:
         "只返回合法 JSON，不要 Markdown，不要添加额外字段。"
         "只能选择候选列表中真实存在的 arxiv_id，不能编造论文。"
         "最多返回用户要求的 max_results 篇论文。"
+        "在不选择明显无关论文的前提下，请尽量返回接近 max_results 的论文。"
+        "如果高度相关论文少于 max_results，可以补充选择中等相关但仍有阅读价值的论文；不要为了凑满选择弱相关论文。"
+        "如果少选，必须在 shortfall_reason 中用一句话说明原因；如果选满，shortfall_reason 使用空字符串。"
         "不要只因为标题或摘要中出现关键词就机械选择，要结合摘要判断科学问题、方法和结果是否真的相关。"
         "优先选择与兴趣高度相关、贡献清楚、对理解领域前沿或主流方法有价值的论文。"
+        "relevance 评分标准：5=高度相关且应优先阅读；4=明显相关且建议阅读；3=中等相关，强相关不足时可选；2=弱相关，不应选择；1=无关，不应选择。"
         "按相关性从高到低排序。"
         "必须严格使用以下 JSON 骨架："
         "{"
         '"selected":['
         '{"arxiv_id":"","relevance":5,"matched_interests":[""],"reason":""}'
-        "]"
+        "],"
+        '"shortfall_reason":""'
         "}。"
     )
 
@@ -91,6 +96,8 @@ def user_prompt(
         f"候选论文总数: {len(papers)}\n\n"
         f"候选论文 metadata:\n{candidates}\n\n"
         "请返回 JSON。reason 用一句话说明为什么该论文值得进入后续阅读流程。"
+        "请优先选 relevance 5 和 4 的论文；如果数量不足，可以选择 relevance 3 但仍有助于理解领域前沿或主流方法的论文。"
+        "如果 selected 数量少于 max_results，shortfall_reason 必须说明候选中相关论文不足的原因。"
     )
 
 

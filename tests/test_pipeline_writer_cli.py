@@ -13,6 +13,7 @@ from arxiv_astro.models import (
     LLMMetadata,
     PaperContent,
     PaperContentBlock,
+    PaperSelectionSummary,
     SelectionBlock,
     SelectedPaper,
 )
@@ -273,6 +274,13 @@ def test_write_selection_block_and_manifest_reference(sample_paper, tmp_path: Pa
                 reason="matches interests",
             )
         ],
+        summary=PaperSelectionSummary(
+            candidate_count=1,
+            requested_count=1,
+            selected_count=1,
+            shortfall=0,
+            shortfall_reason="",
+        ),
         llm_metadata=LLMMetadata(
             provider="openai-compatible",
             model="model",
@@ -297,6 +305,8 @@ def test_write_selection_block_and_manifest_reference(sample_paper, tmp_path: Pa
     manifest_payload = json.loads(manifest_path.read_text(encoding="utf-8"))
     assert selection_path == tmp_path / "runs" / "2024-01-01_astro-ph.IM" / "selection.json"
     assert selection_payload["selected"][0]["reason"] == "matches interests"
+    assert selection_payload["summary"]["candidate_count"] == 1
+    assert selection_payload["summary"]["shortfall"] == 0
     assert selection_payload["selection_date"] == "2024-01-01"
     assert manifest_payload["selection"] == str(selection_path)
 
@@ -677,7 +687,7 @@ def test_cli_run_reports_selection_error(monkeypatch, tmp_path: Path, capsys) ->
         def __init__(self, **kwargs) -> None:
             pass
 
-        def run(self, *args, **kwargs):
+        def fetch_candidates(self, *args, **kwargs):
             from arxiv_astro.selection import SelectionError
 
             raise SelectionError("selection failed")
