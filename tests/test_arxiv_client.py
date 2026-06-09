@@ -4,7 +4,15 @@ from datetime import datetime, timezone
 
 import arxiv
 
-from arxiv_astro.arxiv_client import ArxivClient, build_search, effective_page_size, normalize_space, paper_from_result
+from arxiv_astro.arxiv_client import (
+    ArxivClient,
+    build_category_query,
+    build_search,
+    effective_page_size,
+    expand_categories,
+    normalize_space,
+    paper_from_result,
+)
 
 
 class FakeArxivClient:
@@ -40,6 +48,28 @@ def test_build_search_uses_category_and_latest_sort() -> None:
     assert search.max_results == 20
     assert search.sort_by == arxiv.SortCriterion.SubmittedDate
     assert search.sort_order == arxiv.SortOrder.Descending
+
+
+def test_build_category_query_expands_astro_ph_archive() -> None:
+    assert build_category_query("astro-ph") == (
+        "(cat:astro-ph.CO OR cat:astro-ph.EP OR cat:astro-ph.GA OR "
+        "cat:astro-ph.HE OR cat:astro-ph.IM OR cat:astro-ph.SR)"
+    )
+
+
+def test_build_category_query_supports_comma_separated_categories() -> None:
+    assert build_category_query("astro-ph.IM, astro-ph.HE") == "(cat:astro-ph.IM OR cat:astro-ph.HE)"
+
+
+def test_expand_categories_deduplicates_expanded_archives() -> None:
+    assert expand_categories("astro-ph,astro-ph.IM") == [
+        "astro-ph.CO",
+        "astro-ph.EP",
+        "astro-ph.GA",
+        "astro-ph.HE",
+        "astro-ph.IM",
+        "astro-ph.SR",
+    ]
 
 
 def test_paper_from_result_normalizes_metadata() -> None:

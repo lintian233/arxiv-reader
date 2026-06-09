@@ -7,7 +7,14 @@ from arxiv_astro.content_pipeline import load_content_blocks
 from arxiv_astro.content_io import read_content_blocks
 from arxiv_astro.explain_pipeline import build_image_context, build_llm_input, explain_content_blocks
 from arxiv_astro.metadata_io import read_metadata
-from arxiv_astro.models import ArticleImage, ContentType, LLMInterpretation, LLMMetadata, PaperContent, PaperContentBlock
+from arxiv_astro.models import (
+    ArticleImage,
+    ContentType,
+    LLMInterpretation,
+    LLMMetadata,
+    PaperContent,
+    PaperContentBlock,
+)
 from arxiv_astro.normalize import build_paper_block
 from arxiv_astro.writer import (
     write_content_block,

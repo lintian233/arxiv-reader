@@ -13,6 +13,7 @@ from arxiv_astro.models import (
     ReaderPaperBlock,
     RunManifest,
     RunOutput,
+    SelectionBlock,
 )
 from arxiv_astro.normalize import build_reader_block
 
@@ -69,19 +70,26 @@ def write_reader_block(block: ReaderPaperBlock, output_root: Path, run_date: str
     return write_json(paper_file(output_root, block.paper.arxiv_id, "reader.json"), block)
 
 
+def write_selection_block(selection: SelectionBlock, output_root: Path, run_date: str | None = None) -> Path:
+    effective_date = run_date or current_date()
+    selection.selection_date = effective_date
+    return write_json(selection_path(output_root, effective_date, selection.category), selection)
+
+
 def write_fetch_outputs(
     papers: list[PaperMetadata],
     output_root: Path,
     category: str,
     max_results: int,
     run_date: str | None = None,
+    selection_path: Path | None = None,
 ) -> Path:
     effective_date = run_date or current_date()
     outputs = [
         RunOutput(arxiv_id=paper.arxiv_id, metadata=write_metadata_block(paper, output_root, effective_date))
         for paper in papers
     ]
-    return write_manifest(output_root, category, max_results, effective_date, outputs)
+    return write_manifest(output_root, category, max_results, effective_date, outputs, selection_path=selection_path)
 
 
 def write_content_outputs(
@@ -92,6 +100,7 @@ def write_content_outputs(
     metadata_paths: dict[str, Path] | None = None,
     figure_sets: dict[str, FigureSet] | None = None,
     run_date: str | None = None,
+    selection_path: Path | None = None,
 ) -> Path:
     effective_date = run_date or current_date()
     outputs = []
@@ -108,7 +117,7 @@ def write_content_outputs(
                 figures=figures_path,
             )
         )
-    return write_manifest(output_root, category, max_results, effective_date, outputs)
+    return write_manifest(output_root, category, max_results, effective_date, outputs, selection_path=selection_path)
 
 
 def write_interpretation_outputs(
@@ -122,6 +131,7 @@ def write_interpretation_outputs(
     figure_sets: dict[str, FigureSet] | None = None,
     figure_paths: dict[str, Path] | None = None,
     run_date: str | None = None,
+    selection_path: Path | None = None,
 ) -> Path:
     effective_date = run_date or current_date()
     outputs = []
@@ -150,7 +160,7 @@ def write_interpretation_outputs(
                 reader=reader_path,
             )
         )
-    return write_manifest(output_root, category, max_results, effective_date, outputs)
+    return write_manifest(output_root, category, max_results, effective_date, outputs, selection_path=selection_path)
 
 
 def write_reader_outputs(
@@ -159,6 +169,7 @@ def write_reader_outputs(
     category: str,
     max_results: int,
     run_date: str | None = None,
+    selection_path: Path | None = None,
 ) -> Path:
     effective_date = run_date or current_date()
     outputs = []
@@ -192,7 +203,7 @@ def write_reader_outputs(
                 reader=reader_path,
             )
         )
-    return write_manifest(output_root, category, max_results, effective_date, outputs)
+    return write_manifest(output_root, category, max_results, effective_date, outputs, selection_path=selection_path)
 
 
 def write_manifest(
@@ -201,6 +212,7 @@ def write_manifest(
     max_results: int,
     run_date: str,
     outputs: list[RunOutput],
+    selection_path: Path | None = None,
 ) -> Path:
     manifest = RunManifest(
         run_id=run_id(run_date, category),
@@ -209,6 +221,7 @@ def write_manifest(
         run_date=run_date,
         paper_ids=[output.arxiv_id for output in outputs],
         outputs=outputs,
+        selection=selection_path,
     )
     return write_json(output_root / "runs" / manifest.run_id / "manifest.json", manifest)
 
@@ -237,6 +250,10 @@ def default_content_path(output_root: Path, arxiv_id: str) -> Path:
 
 def default_figures_path(output_root: Path, arxiv_id: str) -> Path:
     return paper_file(output_root, arxiv_id, "figures.json")
+
+
+def selection_path(output_root: Path, run_date: str, category: str) -> Path:
+    return output_root / "runs" / run_id(run_date, category) / "selection.json"
 
 
 def run_id(run_date: str, category: str) -> str:

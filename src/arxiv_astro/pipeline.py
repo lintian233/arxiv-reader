@@ -14,6 +14,7 @@ from arxiv_astro.llm_client import LLMClient
 from arxiv_astro.llm_tasks import PaperInterpretationTask
 from arxiv_astro.models import FigureSet, PaperBlock, PaperContent, PaperContentBlock, PaperMetadata, ReaderPaperBlock
 from arxiv_astro.normalize import build_paper_block, build_reader_block, truncate_for_llm
+from arxiv_astro.selection import PaperSelector, SelectionError
 
 
 PipelineUpdate = Callable[[dict[str, Any]], None]
@@ -36,6 +37,7 @@ class Pipeline:
         cache_root: Path | None = None,
         figure_downloader: FigureDownloader | None = None,
         interpretation_task: PaperInterpretationTask | None = None,
+        paper_selector: PaperSelector | None = None,
     ) -> None:
         self.arxiv_client = arxiv_client
         self.content_loader = content_loader
@@ -44,14 +46,47 @@ class Pipeline:
         self.cache_root = cache_root
         self.figure_downloader = figure_downloader
         self.interpretation_task = interpretation_task or PaperInterpretationTask()
+        self.paper_selector = paper_selector
+        self.selection_block = None
 
-    def run(self, category: str, max_results: int, on_update: PipelineUpdate | None = None) -> list[ReaderPaperBlock]:
-        papers = self.arxiv_client.fetch_category(category, max_results=max_results)
+    def run(
+        self,
+        category: str,
+        max_results: int,
+        on_update: PipelineUpdate | None = None,
+        fetch_results: int | None = None,
+        interests: str | None = None,
+    ) -> list[ReaderPaperBlock]:
+        self.selection_block = None
+        papers = self.fetch_papers(category, max_results, fetch_results, interests)
         emit_pipeline_started(on_update, papers)
         return [
             self.process_paper(PaperRun(paper=paper, index=index, total=len(papers)), on_update)
             for index, paper in enumerate(papers, start=1)
         ]
+
+    def fetch_papers(
+        self,
+        category: str,
+        max_results: int,
+        fetch_results: int | None = None,
+        interests: str | None = None,
+    ) -> list[PaperMetadata]:
+        effective_fetch_results = fetch_results if interests else max_results
+        papers = self.arxiv_client.fetch_category(category, max_results=effective_fetch_results or max_results)
+        if not interests:
+            return papers
+        if not self.paper_selector:
+            raise SelectionError("paper selector is required when interests are set")
+        selection = self.paper_selector.select(
+            papers,
+            interests,
+            max_results=max_results,
+            category=category,
+            fetch_results=effective_fetch_results or len(papers),
+        )
+        self.selection_block = selection.block
+        return selection.papers
 
     def process_paper(self, run: PaperRun, on_update: PipelineUpdate | None = None) -> ReaderPaperBlock:
         emit_paper_update(on_update, run, status="fetched")

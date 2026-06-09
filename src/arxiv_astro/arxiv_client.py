@@ -7,6 +7,17 @@ import arxiv
 from arxiv_astro.models import PaperMetadata
 from arxiv_astro.settings import debug_log
 
+ARCHIVE_CATEGORY_EXPANSIONS = {
+    "astro-ph": [
+        "astro-ph.CO",
+        "astro-ph.EP",
+        "astro-ph.GA",
+        "astro-ph.HE",
+        "astro-ph.IM",
+        "astro-ph.SR",
+    ],
+}
+
 
 class ArxivResultClient(Protocol):
     def results(self, search: arxiv.Search): ...
@@ -17,8 +28,8 @@ class ArxivClient:
         self,
         client: ArxivResultClient | None = None,
         page_size: int = 100,
-        delay_seconds: float = 3.0,
-        num_retries: int = 5,
+        delay_seconds: float = 5.0,
+        num_retries: int = 2,
         timeout: float | None = None,
     ) -> None:
         _ = timeout
@@ -86,11 +97,37 @@ def fetch_category(
 
 def build_search(category: str, max_results: int) -> arxiv.Search:
     return arxiv.Search(
-        query=f"cat:{category}",
+        query=build_category_query(category),
         max_results=max_results,
         sort_by=arxiv.SortCriterion.SubmittedDate,
         sort_order=arxiv.SortOrder.Descending,
     )
+
+
+def build_category_query(category: str) -> str:
+    categories = expand_categories(category)
+    query_parts = [f"cat:{item}" for item in categories]
+    if len(query_parts) == 1:
+        return query_parts[0]
+    return f"({' OR '.join(query_parts)})"
+
+
+def expand_categories(category: str) -> list[str]:
+    expanded: list[str] = []
+    seen: set[str] = set()
+    for item in parse_category_input(category):
+        for resolved in ARCHIVE_CATEGORY_EXPANSIONS.get(item, [item]):
+            if resolved not in seen:
+                expanded.append(resolved)
+                seen.add(resolved)
+    return expanded
+
+
+def parse_category_input(category: str) -> list[str]:
+    categories = [item.strip() for item in category.split(",") if item.strip()]
+    if not categories:
+        raise ValueError("category must not be empty")
+    return categories
 
 
 def effective_page_size(page_size: int, max_results: int) -> int:

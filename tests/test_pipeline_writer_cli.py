@@ -7,9 +7,18 @@ import arxiv
 
 from arxiv_astro import cli
 from arxiv_astro.cli import build_parser
-from arxiv_astro.models import ContentType, LLMInterpretation, LLMMetadata, PaperContent, PaperContentBlock
+from arxiv_astro.models import (
+    ContentType,
+    LLMInterpretation,
+    LLMMetadata,
+    PaperContent,
+    PaperContentBlock,
+    SelectionBlock,
+    SelectedPaper,
+)
 from arxiv_astro.normalize import build_paper_block, build_reader_block, truncate_for_llm
 from arxiv_astro.pipeline import Pipeline
+from arxiv_astro.selection import PaperSelector
 from arxiv_astro.settings import Settings, debug_log, parse_bool, set_debug
 from arxiv_astro.writer import (
     write_content_block,
@@ -17,6 +26,7 @@ from arxiv_astro.writer import (
     write_fetch_outputs,
     write_interpretation_block,
     write_reader_outputs,
+    write_selection_block,
 )
 
 
@@ -165,6 +175,61 @@ def test_pipeline_ignores_interpretation_cache_with_mismatched_metadata(
     assert blocks[0].llm_metadata.prompt_version == "v2"
 
 
+def test_pipeline_selects_papers_before_content_and_explain(sample_paper, sample_interpretation) -> None:
+    second_paper = sample_paper.model_copy(update={"arxiv_id": "2401.54321v1", "title": "Selected Paper"})
+
+    class CandidateArxivClient:
+        def __init__(self) -> None:
+            self.seen_max_results = None
+
+        def fetch_category(self, category: str, max_results: int):
+            self.seen_max_results = max_results
+            return [sample_paper, second_paper]
+
+    class SeenContentLoader:
+        def __init__(self) -> None:
+            self.seen_ids = []
+
+        def load(self, paper):
+            self.seen_ids.append(paper.arxiv_id)
+            return PaperContent(content_type=ContentType.HTML, text="selected text", text_chars=13)
+
+    class DualLLMClient:
+        model = "dual-model"
+
+        def chat_json(self, messages):
+            if "论文筛选助手" in messages[0]["content"]:
+                return {
+                    "selected": [
+                        {
+                            "arxiv_id": second_paper.arxiv_id,
+                            "relevance": 5,
+                            "matched_interests": ["FRB"],
+                            "reason": "most relevant",
+                        }
+                    ]
+                }
+            return sample_interpretation.model_dump(mode="json")
+
+    arxiv_client = CandidateArxivClient()
+    content_loader = SeenContentLoader()
+    llm_client = DualLLMClient()
+    pipeline = Pipeline(
+        arxiv_client=arxiv_client,
+        content_loader=content_loader,
+        llm_client=llm_client,
+        max_input_chars=1000,
+        paper_selector=PaperSelector(llm_client, max_input_chars=10000, summary_max_chars=4000),
+    )
+
+    blocks = pipeline.run("astro-ph", max_results=1, fetch_results=2, interests="FRB")
+
+    assert arxiv_client.seen_max_results == 2
+    assert content_loader.seen_ids == [second_paper.arxiv_id]
+    assert blocks[0].paper.arxiv_id == second_paper.arxiv_id
+    assert pipeline.selection_block.selected[0].reason == "most relevant"
+
+
 def test_build_reader_block_and_write_outputs(sample_paper, sample_interpretation, tmp_path: Path) -> None:
     content = PaperContent(content_type=ContentType.ABSTRACT, text="abstract", text_chars=8)
     block = build_paper_block(sample_paper, content, sample_interpretation, "ab")
@@ -193,6 +258,49 @@ def test_write_fetch_outputs(sample_paper, tmp_path: Path) -> None:
     assert payload["fetched_date"] == "2024-01-01"
 
 
+def test_write_selection_block_and_manifest_reference(sample_paper, tmp_path: Path) -> None:
+    selection = SelectionBlock(
+        category="astro-ph.IM",
+        fetch_results=100,
+        max_results=1,
+        interests="FRB",
+        candidate_ids=[sample_paper.arxiv_id],
+        selected=[
+            SelectedPaper(
+                arxiv_id=sample_paper.arxiv_id,
+                relevance=5,
+                matched_interests=["FRB"],
+                reason="matches interests",
+            )
+        ],
+        llm_metadata=LLMMetadata(
+            provider="openai-compatible",
+            model="model",
+            task="paper_selection",
+            prompt_version="v1",
+            schema_version="v1",
+            max_input_chars=220000,
+        ),
+    )
+
+    selection_path = write_selection_block(selection, tmp_path, run_date="2024-01-01")
+    manifest_path = write_fetch_outputs(
+        [sample_paper],
+        tmp_path,
+        "astro-ph.IM",
+        max_results=1,
+        run_date="2024-01-01",
+        selection_path=selection_path,
+    )
+
+    selection_payload = json.loads(selection_path.read_text(encoding="utf-8"))
+    manifest_payload = json.loads(manifest_path.read_text(encoding="utf-8"))
+    assert selection_path == tmp_path / "runs" / "2024-01-01_astro-ph.IM" / "selection.json"
+    assert selection_payload["selected"][0]["reason"] == "matches interests"
+    assert selection_payload["selection_date"] == "2024-01-01"
+    assert manifest_payload["selection"] == str(selection_path)
+
+
 def test_settings_from_env(monkeypatch) -> None:
     monkeypatch.setenv("DEEPSEEK_API_KEY", "key")
     monkeypatch.setenv("DEEPSEEK_BASE_URL", "https://example.com")
@@ -202,6 +310,10 @@ def test_settings_from_env(monkeypatch) -> None:
     monkeypatch.setenv("LLM_REQUEST_TIMEOUT", "180.5")
     monkeypatch.setenv("MAX_INPUT_CHARS", "123")
     monkeypatch.setenv("LLM_MAX_OUTPUT_TOKENS", "456")
+    monkeypatch.setenv("PAPER_INTERESTS", "FRB")
+    monkeypatch.setenv("FETCH_RESULTS", "99")
+    monkeypatch.setenv("SELECTION_MAX_INPUT_CHARS", "789")
+    monkeypatch.setenv("SELECTION_SUMMARY_MAX_CHARS", "321")
     monkeypatch.setenv("DEBUG", "true")
 
     settings = Settings.from_env()
@@ -213,6 +325,10 @@ def test_settings_from_env(monkeypatch) -> None:
     assert settings.llm_request_timeout == 180.5
     assert settings.max_input_chars == 123
     assert settings.llm_max_output_tokens == 456
+    assert settings.paper_interests == "FRB"
+    assert settings.fetch_results == 99
+    assert settings.selection_max_input_chars == 789
+    assert settings.selection_summary_max_chars == 321
     assert settings.debug is True
     set_debug(False)
 
@@ -236,11 +352,25 @@ def test_parse_bool() -> None:
 
 
 def test_cli_parser() -> None:
-    args = build_parser().parse_args(["run", "--category", "astro-ph.CO", "--max-results", "2"])
+    args = build_parser().parse_args(
+        [
+            "run",
+            "--category",
+            "astro-ph.CO",
+            "--fetch-results",
+            "100",
+            "--max-results",
+            "2",
+            "--interests",
+            "FRB",
+        ]
+    )
 
     assert args.command == "run"
     assert args.category == "astro-ph.CO"
+    assert args.fetch_results == 100
     assert args.max_results == 2
+    assert args.interests == "FRB"
 
 
 def test_cli_parser_supports_fetch() -> None:
@@ -538,6 +668,32 @@ def test_cli_report_generates_html(monkeypatch, sample_paper, sample_interpretat
     output = Path(capsys.readouterr().out.strip())
     assert output == tmp_path / "runs" / "2024-01-01_astro-ph.IM" / "report.html"
     assert sample_paper.title in output.read_text(encoding="utf-8")
+
+
+def test_cli_run_reports_selection_error(monkeypatch, tmp_path: Path, capsys) -> None:
+    class FailingPipeline:
+        selection_block = None
+
+        def __init__(self, **kwargs) -> None:
+            pass
+
+        def run(self, *args, **kwargs):
+            from arxiv_astro.selection import SelectionError
+
+            raise SelectionError("selection failed")
+
+    class FakeLLMClient:
+        def __init__(self, **kwargs) -> None:
+            self.model = kwargs["model"]
+
+    monkeypatch.setenv("OUTPUT_DIR", str(tmp_path))
+    monkeypatch.setenv("DEEPSEEK_API_KEY", "key")
+    monkeypatch.setattr(cli, "Pipeline", FailingPipeline)
+    monkeypatch.setattr(cli, "LLMClient", FakeLLMClient)
+
+    assert cli.main(["run", "--category", "astro-ph", "--interests", "FRB"]) == 1
+
+    assert "paper selection failed: selection failed" in capsys.readouterr().err
 
 
 def test_cli_serve_uses_output_dir_and_port(monkeypatch, tmp_path: Path, capsys) -> None:

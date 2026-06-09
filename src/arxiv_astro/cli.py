@@ -18,6 +18,7 @@ from arxiv_astro.live_view import PipelineLiveRenderer
 from arxiv_astro.metadata_io import read_metadata
 from arxiv_astro.pipeline import Pipeline
 from arxiv_astro.report import generate_report
+from arxiv_astro.selection import PaperSelector, SelectionError
 from arxiv_astro.settings import Settings, debug_log, set_debug
 from arxiv_astro.workflows import (
     build_content_context,
@@ -27,6 +28,7 @@ from arxiv_astro.workflows import (
     load_content_blocks_with_cache,
 )
 from arxiv_astro.writer import (
+    write_selection_block,
     write_content_outputs,
     write_fetch_outputs,
     write_interpretation_outputs,
@@ -43,6 +45,8 @@ def build_parser() -> argparse.ArgumentParser:
 
     run_parser = subparsers.add_parser("run", help="Fetch papers and run the full LLM pipeline")
     add_common_args(run_parser)
+    run_parser.add_argument("--fetch-results", type=int, help="Number of metadata candidates to fetch before selection")
+    run_parser.add_argument("--interests", help="Paper interests used by the LLM selector")
 
     content_parser = subparsers.add_parser("content", help="Load full text and images from metadata")
     content_parser.add_argument("--input", required=True, help="metadata.json or manifest.json path from fetch")
@@ -99,9 +103,18 @@ def main(argv: list[str] | None = None) -> int:
         if command == "serve":
             return run_serve(settings, port=args.port)
 
-        return run_pipeline(args.category, args.max_results, settings)
+        return run_pipeline(
+            args.category,
+            args.max_results,
+            settings,
+            fetch_results=getattr(args, "fetch_results", None),
+            interests=getattr(args, "interests", None),
+        )
     except arxiv.ArxivError as exc:
         print(f"arXiv request failed: {exc}", file=sys.stderr)
+        return 1
+    except SelectionError as exc:
+        print(f"paper selection failed: {exc}", file=sys.stderr)
         return 1
 
 
@@ -163,25 +176,58 @@ def run_explain(input_path: Path, settings: Settings) -> int:
     return 0
 
 
-def run_pipeline(category: str, max_results: int, settings: Settings) -> int:
-    debug_log("running full pipeline", category=category, max_results=max_results)
+def run_pipeline(
+    category: str,
+    max_results: int,
+    settings: Settings,
+    fetch_results: int | None = None,
+    interests: str | None = None,
+) -> int:
+    effective_interests = interests if interests is not None else settings.paper_interests
+    effective_fetch_results = fetch_results if fetch_results is not None else settings.fetch_results
+    debug_log(
+        "running full pipeline",
+        category=category,
+        max_results=max_results,
+        fetch_results=effective_fetch_results,
+        has_interests=bool(effective_interests),
+    )
+    llm_client = LLMClient(
+        api_key=settings.api_key,
+        base_url=settings.base_url,
+        model=settings.model,
+        timeout=settings.llm_request_timeout,
+        max_output_tokens=settings.llm_max_output_tokens,
+    )
     pipeline = Pipeline(
         arxiv_client=ArxivClient(timeout=settings.request_timeout),
         content_loader=ContentLoader(output_root=Path(settings.output_dir), timeout=settings.request_timeout),
-        llm_client=LLMClient(
-            api_key=settings.api_key,
-            base_url=settings.base_url,
-            model=settings.model,
-            timeout=settings.llm_request_timeout,
-            max_output_tokens=settings.llm_max_output_tokens,
-        ),
+        llm_client=llm_client,
         max_input_chars=settings.max_input_chars,
         cache_root=Path(settings.output_dir),
         figure_downloader=FigureDownloader(Path(settings.output_dir), timeout=settings.request_timeout),
+        paper_selector=PaperSelector(
+            llm_client=llm_client,
+            max_input_chars=settings.selection_max_input_chars,
+            summary_max_chars=settings.selection_summary_max_chars,
+        )
+        if effective_interests
+        else None,
     )
     with PipelineLiveRenderer() as live:
-        blocks = pipeline.run(category, max_results, on_update=live.on_update)
-    output_path = write_reader_outputs(blocks, Path(settings.output_dir), category, max_results)
+        blocks = pipeline.run(
+            category,
+            max_results,
+            on_update=live.on_update,
+            fetch_results=effective_fetch_results,
+            interests=effective_interests,
+        )
+    selection_path = (
+        write_selection_block(pipeline.selection_block, Path(settings.output_dir))
+        if pipeline.selection_block
+        else None
+    )
+    output_path = write_reader_outputs(blocks, Path(settings.output_dir), category, max_results, selection_path=selection_path)
     print(output_path)
     return 0
 

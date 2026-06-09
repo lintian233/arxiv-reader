@@ -35,6 +35,10 @@ class Settings:
     llm_request_timeout: float = 180.0
     max_input_chars: int = 400000
     llm_max_output_tokens: int = 12000
+    paper_interests: str = ""
+    fetch_results: int = 100
+    selection_max_input_chars: int = 220000
+    selection_summary_max_chars: int = 4000
     debug: bool = False
 
     @classmethod
@@ -48,6 +52,10 @@ class Settings:
             llm_request_timeout=float(os.getenv("LLM_REQUEST_TIMEOUT", cls.llm_request_timeout)),
             max_input_chars=int(os.getenv("MAX_INPUT_CHARS", cls.max_input_chars)),
             llm_max_output_tokens=int(os.getenv("LLM_MAX_OUTPUT_TOKENS", cls.llm_max_output_tokens)),
+            paper_interests=os.getenv("PAPER_INTERESTS", cls.paper_interests),
+            fetch_results=int(os.getenv("FETCH_RESULTS", cls.fetch_results)),
+            selection_max_input_chars=int(os.getenv("SELECTION_MAX_INPUT_CHARS", cls.selection_max_input_chars)),
+            selection_summary_max_chars=int(os.getenv("SELECTION_SUMMARY_MAX_CHARS", cls.selection_summary_max_chars)),
             debug=parse_bool(os.getenv("DEBUG")),
         )
         set_debug(settings.debug)

@@ -98,6 +98,28 @@ class LLMMetadata(BaseModel):
     max_input_chars: int
 
 
+class SelectedPaper(BaseModel):
+    arxiv_id: str
+    relevance: int = Field(ge=1, le=5)
+    matched_interests: list[str] = Field(default_factory=list)
+    reason: str
+
+
+class PaperSelectionResult(BaseModel):
+    selected: list[SelectedPaper] = Field(default_factory=list)
+
+
+class SelectionBlock(BaseModel):
+    category: str
+    fetch_results: int
+    max_results: int
+    interests: str
+    candidate_ids: list[str]
+    selected: list[SelectedPaper]
+    llm_metadata: LLMMetadata
+    selection_date: str = Field(default_factory=today_str)
+
+
 class MetadataBlock(BaseModel):
     paper: PaperMetadata
     fetched_date: str = Field(default_factory=today_str)
@@ -143,6 +165,7 @@ class RunManifest(BaseModel):
     run_date: str
     paper_ids: list[str]
     outputs: list[RunOutput]
+    selection: Path | None = None
 
 
 class PaperStatus(BaseModel):
