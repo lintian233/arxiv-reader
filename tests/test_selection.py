@@ -43,6 +43,9 @@ def test_paper_selection_task_builds_metadata_prompt(sample_paper) -> None:
     assert sample_paper.arxiv_id in messages[1]["content"]
     assert sample_paper.title in messages[1]["content"]
     assert "summary:" in messages[1]["content"]
+    assert "Scientific / technical problem" in messages[0]["content"]
+    assert "Field-reading value" in messages[0]["content"]
+    assert "relevance 5 和 4" in messages[1]["content"]
 
 
 def test_paper_selection_task_rejects_too_long_input(sample_paper) -> None:
@@ -96,6 +99,7 @@ def test_paper_selector_returns_selected_papers_and_block(sample_paper) -> None:
     assert result.block.summary.shortfall_reason == ""
     assert result.block.llm_metadata.task == "paper_selection"
     assert result.block.llm_metadata.model == "fake-selection-model"
+    assert result.block.llm_metadata.prompt_version == "v2"
 
 
 def test_paper_selector_records_shortfall_reason(sample_paper) -> None:

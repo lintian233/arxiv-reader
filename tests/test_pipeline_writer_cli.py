@@ -285,7 +285,7 @@ def test_write_selection_block_and_manifest_reference(sample_paper, tmp_path: Pa
             provider="openai-compatible",
             model="model",
             task="paper_selection",
-            prompt_version="v1",
+            prompt_version="v2",
             schema_version="v1",
             max_input_chars=220000,
         ),

@@ -54,7 +54,7 @@ def test_render_selection_summary_shows_selected_papers(sample_paper) -> None:
             provider="openai-compatible",
             model="model",
             task="paper_selection",
-            prompt_version="v1",
+            prompt_version="v2",
             schema_version="v1",
             max_input_chars=10000,
         ),
