@@ -33,17 +33,34 @@ class PaperRow:
     one_sentence: str = ""
     main_results: str = ""
     key_figures: str = ""
+    updated_at: int = 0
 
 
 class PipelineLiveRenderer:
-    def __init__(self, console: Console | None = None) -> None:
+    def __init__(
+        self,
+        console: Console | None = None,
+        max_rows: int = 8,
+        max_title_chars: int = 72,
+        max_preview_chars: int = 180,
+    ) -> None:
         self.console = console or Console(stderr=True)
+        self.max_rows = max_rows
+        self.max_title_chars = max_title_chars
+        self.max_preview_chars = max_preview_chars
         self.rows: dict[str, PaperRow] = {}
         self.total = 0
+        self.update_count = 0
         self._live: Live | None = None
 
     def __enter__(self) -> "PipelineLiveRenderer":
-        self._live = Live(self.render(), console=self.console, refresh_per_second=4, transient=False)
+        self._live = Live(
+            self.render(),
+            console=self.console,
+            refresh_per_second=4,
+            transient=False,
+            vertical_overflow="crop",
+        )
         self._live.__enter__()
         return self
 
@@ -60,6 +77,7 @@ class PipelineLiveRenderer:
         if payload.get("event") != "paper":
             return
 
+        self.update_count += 1
         paper: PaperMetadata = payload["paper"]
         content: PaperContent | None = payload.get("content")
         row = self.rows.get(paper.arxiv_id) or PaperRow(
@@ -69,6 +87,7 @@ class PipelineLiveRenderer:
             title=paper.title,
             status=payload["status"],
         )
+        row.updated_at = self.update_count
         row.status = payload["status"]
         if content:
             row.source = content.content_type.value
@@ -87,7 +106,7 @@ class PipelineLiveRenderer:
             self._live.update(self.render())
 
     def render(self) -> Group:
-        return Group(self.render_table(), self.render_interpretations())
+        return Group(self.render_table(), self.render_latest_result())
 
     def render_table(self) -> Table:
         table = Table(title=f"arxiv-astro pipeline ({len(self.rows)}/{self.total})")
@@ -98,11 +117,11 @@ class PipelineLiveRenderer:
         table.add_column("Source", no_wrap=True)
         table.add_column("Text", justify="right", no_wrap=True)
         table.add_column("Images", justify="right", no_wrap=True)
-        for row in sorted(self.rows.values(), key=lambda item: item.index):
+        for row in self.visible_rows():
             table.add_row(
                 f"{row.index}/{row.total}",
                 row.arxiv_id,
-                row.title,
+                clip_text(row.title, self.max_title_chars),
                 STATUS_LABELS.get(row.status, row.status),
                 row.source,
                 str(row.text_chars or "-"),
@@ -110,31 +129,27 @@ class PipelineLiveRenderer:
             )
         return table
 
-    def render_interpretations(self) -> Panel:
+    def visible_rows(self) -> list[PaperRow]:
+        rows = sorted(self.rows.values(), key=lambda item: item.index)
+        if self.max_rows <= 0:
+            return []
+        return rows[-self.max_rows :]
+
+    def render_latest_result(self) -> Panel:
         completed_rows = [
             row
-            for row in sorted(self.rows.values(), key=lambda item: item.index)
-            if row.one_sentence or row.main_results or row.key_figures
+            for row in self.rows.values()
+            if row.one_sentence
         ]
         if not completed_rows:
-            return Panel("Waiting for LLM interpretations...", title="LLM interpretations")
+            return Panel("Waiting for LLM interpretation preview...", title="Latest result")
 
+        row = max(completed_rows, key=lambda item: item.updated_at)
         body = Text()
-        for row_index, row in enumerate(completed_rows):
-            if row_index:
-                body.append("\n\n")
-            body.append(f"{row.index}/{row.total} {row.arxiv_id}  {row.title}\n", style="bold")
-            if row.one_sentence:
-                body.append("Summary: ", style="cyan")
-                body.append(row.one_sentence)
-                body.append("\n")
-            if row.main_results:
-                body.append("Core result: ", style="green")
-                body.append(row.main_results)
-            if row.key_figures:
-                body.append("\nKey figures: ", style="magenta")
-                body.append(row.key_figures)
-        return Panel(body, title="LLM interpretations")
+        body.append(f"{row.index}/{row.total} {row.arxiv_id}  {clip_text(row.title, self.max_title_chars)}\n", style="bold")
+        body.append("Summary: ", style="cyan")
+        body.append(clip_text(row.one_sentence, self.max_preview_chars))
+        return Panel(body, title="Latest result")
 
 
 def format_key_figures(block: PaperBlock) -> str:
@@ -142,3 +157,14 @@ def format_key_figures(block: PaperBlock) -> str:
         f"图{figure.index}: {figure.plain_caption}"
         for figure in block.llm_interpretation.key_figures
     )
+
+
+def clip_text(value: str, max_chars: int) -> str:
+    if max_chars <= 0:
+        return ""
+    normalized = " ".join(value.split())
+    if len(normalized) <= max_chars:
+        return normalized
+    if max_chars <= 1:
+        return "…"
+    return normalized[: max_chars - 1].rstrip() + "…"

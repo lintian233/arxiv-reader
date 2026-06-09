@@ -84,9 +84,44 @@ def render_output_path(label: str, path: Path, console: Console | None = None) -
     target.print(Text(f"{label}: {path}", style="dim"))
 
 
+def render_pipeline_summary(
+    blocks: list[ReaderPaperBlock],
+    console: Console | None = None,
+) -> None:
+    target = console or default_console()
+    render_pipeline_final_notes(blocks, target)
+
+
+def render_pipeline_final_notes(blocks: list[ReaderPaperBlock], console: Console) -> None:
+    if not blocks:
+        return
+    console.print()
+    for index, block in enumerate(blocks, start=1):
+        if index > 1:
+            console.print()
+        console.print(
+            Text(f"{index}/{len(blocks)} {block.paper.arxiv_id}  {block.paper.title}", style="bold")
+        )
+        console.print(Text("Summary:", style="cyan"))
+        console.print(block.llm_interpretation.one_sentence)
+        console.print(Text("Core result:", style="green"))
+        console.print(block.llm_interpretation.main_results)
+        key_figures = format_key_figures(block)
+        if key_figures:
+            console.print(Text("Key figures:", style="magenta"))
+            console.print(key_figures)
+
+
 def paper_titles_by_id(papers: list[ReaderPaperBlock] | list[PaperMetadata]) -> dict[str, str]:
     titles: dict[str, str] = {}
     for item in papers:
         paper = item if isinstance(item, PaperMetadata) else item.paper
         titles[paper.arxiv_id] = paper.title
     return titles
+
+
+def format_key_figures(block: ReaderPaperBlock) -> str:
+    return "；".join(
+        f"图{figure.index}: {figure.plain_caption}"
+        for figure in block.llm_interpretation.key_figures
+    )

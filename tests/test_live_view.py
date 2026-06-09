@@ -4,7 +4,7 @@ from io import StringIO
 
 from rich.console import Console
 
-from arxiv_astro.live_view import PipelineLiveRenderer, format_key_figures
+from arxiv_astro.live_view import PipelineLiveRenderer, clip_text, format_key_figures
 from arxiv_astro.models import ArticleImage, ContentType, LLMInterpretation, PaperBlock, PaperContent, SourceUsage
 
 
@@ -45,7 +45,11 @@ def test_pipeline_live_renderer_tracks_updates(sample_paper) -> None:
 
 
 def test_pipeline_live_renderer_tracks_llm_result(sample_paper) -> None:
-    renderer = PipelineLiveRenderer(console=Console(file=StringIO(), force_terminal=False))
+    renderer = PipelineLiveRenderer(
+        console=Console(file=StringIO(), force_terminal=False),
+        max_title_chars=32,
+        max_preview_chars=12,
+    )
     block = PaperBlock(
         paper=sample_paper,
         source=SourceUsage(content_type=ContentType.HTML, text_chars=9, used_chars=9),
@@ -82,10 +86,33 @@ def test_pipeline_live_renderer_tracks_llm_result(sample_paper) -> None:
     output = StringIO()
     Console(file=output, force_terminal=False, width=220).print(renderer.render())
     rendered = output.getvalue()
-    assert "LLM interpretations" in rendered
+    assert "Latest result" in rendered
     assert "这是一句话总结" in rendered
-    assert "主要结果" in rendered
-    assert "关键趋势" in rendered
+    assert "主要结果" not in rendered
+    assert "关键趋势" not in rendered
+
+
+def test_pipeline_live_renderer_limits_visible_rows(sample_paper) -> None:
+    renderer = PipelineLiveRenderer(console=Console(file=StringIO(), force_terminal=False), max_rows=2)
+
+    for index in range(1, 5):
+        paper = sample_paper.model_copy(
+            update={
+                "arxiv_id": f"2401.1234{index}v1",
+                "title": f"Paper {index}",
+            }
+        )
+        renderer.on_update({"event": "paper", "index": index, "total": 4, "paper": paper, "status": "done"})
+
+    visible = renderer.visible_rows()
+
+    assert [row.arxiv_id for row in visible] == ["2401.12343v1", "2401.12344v1"]
+
+
+def test_clip_text_normalizes_and_truncates() -> None:
+    assert clip_text("a\n  b\tc", 10) == "a b c"
+    assert clip_text("abcdef", 4) == "abc…"
+    assert clip_text("abcdef", 0) == ""
 
 
 def test_pipeline_live_renderer_context_manager(sample_paper) -> None:

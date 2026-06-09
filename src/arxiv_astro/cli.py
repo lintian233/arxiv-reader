@@ -10,7 +10,12 @@ import arxiv
 from dotenv import load_dotenv
 
 from arxiv_astro.arxiv_client import ArxivClient
-from arxiv_astro.cli_render import render_fetch_summary, render_output_path, render_selection_summary
+from arxiv_astro.cli_render import (
+    render_fetch_summary,
+    render_output_path,
+    render_pipeline_summary,
+    render_selection_summary,
+)
 from arxiv_astro.content_io import read_content_blocks
 from arxiv_astro.content_loader import ContentLoader
 from arxiv_astro.figure_downloader import FigureDownloader
@@ -232,6 +237,7 @@ def run_pipeline(
             pipeline.process_paper(PaperRun(paper=paper, index=index, total=len(papers)), live.on_update)
             for index, paper in enumerate(papers, start=1)
         ]
+    render_pipeline_summary(blocks)
     selection_path = (
         write_selection_block(pipeline.selection_block, Path(settings.output_dir))
         if pipeline.selection_block
