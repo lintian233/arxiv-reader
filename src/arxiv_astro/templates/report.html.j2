@@ -1,0 +1,432 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{{ report.title }}</title>
+  <style>
+    :root {
+      color-scheme: light;
+      --ink: #17212b;
+      --text: #263544;
+      --muted: #6f7b88;
+      --faint: #98a4af;
+      --rule: #e1e6eb;
+      --paper: #fffdfa;
+      --surface: #f7f8f8;
+      --accent: #175c73;
+      --accent-soft: #edf5f7;
+      --result: #1d6a56;
+      --result-soft: #eef7f3;
+      --warning: #8a5a18;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    html {
+      scroll-behavior: smooth;
+    }
+
+    body {
+      margin: 0;
+      background: var(--paper);
+      color: var(--text);
+      font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      font-size: 16px;
+      line-height: 1.72;
+    }
+
+    a {
+      color: var(--accent);
+      text-decoration: none;
+      border-bottom: 1px solid rgba(23, 92, 115, 0.28);
+    }
+
+    a:hover {
+      border-bottom-color: var(--accent);
+    }
+
+    .page {
+      max-width: 1120px;
+      margin: 0 auto;
+      padding: 46px 28px 72px;
+    }
+
+    .measure {
+      max-width: 850px;
+    }
+
+    .report-header {
+      display: grid;
+      gap: 14px;
+      padding-bottom: 28px;
+      border-bottom: 1px solid var(--ink);
+    }
+
+    .eyebrow,
+    .mono,
+    .section-kicker,
+    .figure-kicker {
+      font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+      letter-spacing: 0;
+    }
+
+    .eyebrow {
+      margin: 0;
+      color: var(--accent);
+      font-size: 13px;
+    }
+
+    h1,
+    h2 {
+      color: var(--ink);
+      font-family: Georgia, "Times New Roman", serif;
+      letter-spacing: 0;
+    }
+
+    h1 {
+      max-width: 880px;
+      margin: 0;
+      font-size: clamp(34px, 5vw, 54px);
+      font-weight: 600;
+      line-height: 1.05;
+    }
+
+    .run-meta,
+    .paper-meta {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px 16px;
+      color: var(--muted);
+      font-size: 14px;
+    }
+
+    .toc {
+      margin: 30px 0 18px;
+      padding-bottom: 28px;
+      border-bottom: 1px solid var(--rule);
+    }
+
+    .toc-title {
+      margin: 0 0 14px;
+      color: var(--faint);
+      font-size: 13px;
+      font-weight: 700;
+      text-transform: uppercase;
+    }
+
+    .toc-list {
+      display: grid;
+      gap: 14px;
+      margin: 0;
+      padding: 0;
+      list-style: none;
+    }
+
+    .toc-item {
+      display: grid;
+      grid-template-columns: 108px minmax(0, 1fr);
+      gap: 18px;
+      padding-top: 14px;
+      border-top: 1px solid var(--rule);
+    }
+
+    .mono {
+      color: var(--muted);
+      font-size: 13px;
+      white-space: nowrap;
+    }
+
+    .toc-heading {
+      color: var(--ink);
+      font-weight: 720;
+      border-bottom: none;
+    }
+
+    .toc-summary {
+      max-width: 860px;
+      margin-top: 4px;
+      color: var(--muted);
+      font-size: 14px;
+      line-height: 1.55;
+    }
+
+    .paper {
+      padding: 44px 0 52px;
+      border-bottom: 1px solid var(--rule);
+    }
+
+    .paper-title {
+      max-width: 920px;
+      margin: 0;
+      font-size: clamp(27px, 3.2vw, 39px);
+      font-weight: 600;
+      line-height: 1.13;
+    }
+
+    .paper-meta {
+      margin-top: 16px;
+    }
+
+    .authors {
+      margin-top: 8px;
+      color: var(--muted);
+      font-size: 14px;
+    }
+
+    .takeaway {
+      max-width: 880px;
+      margin: 28px 0 34px;
+      padding: 0 0 0 18px;
+      border-left: 3px solid var(--accent);
+      color: var(--ink);
+      font-size: 18px;
+      line-height: 1.65;
+    }
+
+    .analysis {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 28px 34px;
+      max-width: 940px;
+    }
+
+    .section p {
+      margin: 0;
+    }
+
+    .section-kicker {
+      margin: 0 0 8px;
+      color: var(--accent);
+      font-size: 12px;
+      font-weight: 700;
+      text-transform: uppercase;
+    }
+
+    .result-block {
+      padding: 18px 20px;
+      border-top: 1px solid rgba(29, 106, 86, 0.26);
+      border-bottom: 1px solid rgba(29, 106, 86, 0.26);
+      background: var(--result-soft);
+    }
+
+    .result-block .section-kicker {
+      color: var(--result);
+    }
+
+    .figures {
+      display: grid;
+      gap: 22px;
+      margin-top: 34px;
+      max-width: 940px;
+    }
+
+    .figure {
+      margin: 0;
+      padding: 0;
+      border-top: 1px solid var(--rule);
+      border-bottom: 1px solid var(--rule);
+      background: #fff;
+    }
+
+    .figure img {
+      display: block;
+      width: auto;
+      max-width: min(100%, 860px);
+      height: auto;
+      max-height: 540px;
+      margin: 18px auto;
+      object-fit: contain;
+      background: #fff;
+    }
+
+    .figure-body {
+      max-width: 850px;
+      padding: 16px 0 18px;
+      margin: 0 auto;
+      border-top: 1px solid var(--rule);
+    }
+
+    .figure-kicker {
+      margin: 0 0 8px;
+      color: var(--accent);
+      font-size: 12px;
+      font-weight: 700;
+    }
+
+    .caption,
+    .why,
+    .evidence {
+      margin: 0;
+      font-size: 14px;
+      line-height: 1.68;
+    }
+
+    .caption {
+      color: var(--ink);
+      font-weight: 650;
+    }
+
+    .why {
+      margin-top: 8px;
+      color: var(--text);
+    }
+
+    .evidence {
+      margin-top: 8px;
+      color: var(--result);
+    }
+
+    .no-figures {
+      max-width: 850px;
+      margin-top: 30px;
+      padding-top: 14px;
+      border-top: 1px solid var(--rule);
+      color: var(--muted);
+      font-size: 14px;
+    }
+
+    .judgement {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 30px;
+      max-width: 940px;
+      margin-top: 34px;
+    }
+
+    .judgement .section {
+      padding-top: 18px;
+      border-top: 1px solid var(--rule);
+    }
+
+    .limitations .section-kicker {
+      color: var(--warning);
+    }
+
+    @media (max-width: 860px) {
+      .page {
+        padding: 30px 18px 52px;
+      }
+
+      .toc-item,
+      .analysis,
+      .judgement {
+        grid-template-columns: 1fr;
+      }
+
+      .toc-item {
+        gap: 5px;
+      }
+
+      .figure img {
+        max-height: 420px;
+      }
+    }
+  </style>
+</head>
+<body>
+  <main class="page">
+    <header class="report-header">
+      <p class="eyebrow">arxiv-astro reader</p>
+      <h1>{{ report.category }} paper briefing</h1>
+      <div class="run-meta">
+        <span>Date: {{ report.run_date }}</span>
+        <span>Papers: {{ report.paper_count }}</span>
+      </div>
+    </header>
+
+    <nav class="toc" aria-label="Paper overview">
+      <p class="toc-title">Overview</p>
+      <ol class="toc-list">
+        {% for item in report.papers %}
+        <li class="toc-item">
+          <span class="mono">{{ item.paper.arxiv_id }}</span>
+          <div>
+            <a class="toc-heading" href="#{{ item.anchor }}">{{ item.paper.title }}</a>
+            <div class="toc-summary">{{ item.interpretation.one_sentence }}</div>
+          </div>
+        </li>
+        {% endfor %}
+      </ol>
+    </nav>
+
+    {% for item in report.papers %}
+    <article class="paper" id="{{ item.anchor }}">
+      <header>
+        <h2 class="paper-title">{{ item.paper.title }}</h2>
+        <div class="paper-meta">
+          <span class="mono">{{ item.paper.arxiv_id }}</span>
+          <span>{{ item.paper.primary_category }}</span>
+          <a href="{{ item.abs_url }}">arXiv</a>
+          <a href="{{ item.pdf_url }}">PDF</a>
+          <a href="{{ item.html_url }}">HTML</a>
+          <span>{{ item.source.content_type.value }} · {{ item.source.used_chars }} chars used</span>
+        </div>
+        <div class="authors">{{ item.authors }}</div>
+      </header>
+
+      <p class="takeaway">{{ item.interpretation.one_sentence }}</p>
+
+      <div class="analysis">
+        <section class="section">
+          <p class="section-kicker">Problem</p>
+          <p>{{ item.interpretation.problem_context }}</p>
+        </section>
+
+        <section class="section">
+          <p class="section-kicker">Why it matters</p>
+          <p>{{ item.interpretation.why_it_matters }}</p>
+        </section>
+
+        <section class="section">
+          <p class="section-kicker">What the paper did</p>
+          <p>{{ item.interpretation.what_the_paper_does }}</p>
+        </section>
+
+        <section class="section result-block">
+          <p class="section-kicker">Core result</p>
+          <p>{{ item.interpretation.main_results }}</p>
+        </section>
+      </div>
+
+      {% if item.figures %}
+      <section class="figures" aria-label="Key figures">
+        <p class="section-kicker">Key figures</p>
+        {% for figure in item.figures %}
+        <figure class="figure">
+          {% if figure.image_src %}
+          <img src="{{ figure.image_src }}" alt="{{ figure.alt or figure.plain_caption }}">
+          {% endif %}
+          <figcaption class="figure-body">
+            <p class="figure-kicker">Figure {{ figure.index }}</p>
+            <p class="caption">{{ figure.plain_caption }}</p>
+            <p class="why">{{ figure.why_key }}</p>
+            {% if figure.evidence %}
+            <p class="evidence">Evidence: {{ figure.evidence }}</p>
+            {% endif %}
+          </figcaption>
+        </figure>
+        {% endfor %}
+      </section>
+      {% else %}
+      <div class="no-figures">No key figures were selected for this paper.</div>
+      {% endif %}
+
+      <div class="judgement">
+        <section class="section limitations">
+          <p class="section-kicker">Limitations</p>
+          <p>{{ item.interpretation.limitations }}</p>
+        </section>
+
+        <section class="section">
+          <p class="section-kicker">Field position</p>
+          <p>{{ item.interpretation.field_position }}</p>
+        </section>
+      </div>
+    </article>
+    {% endfor %}
+  </main>
+</body>
+</html>

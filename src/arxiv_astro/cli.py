@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import argparse
+import functools
+from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 import sys
 from pathlib import Path
 
@@ -15,6 +17,7 @@ from arxiv_astro.llm_client import LLMClient
 from arxiv_astro.live_view import PipelineLiveRenderer
 from arxiv_astro.metadata_io import read_metadata
 from arxiv_astro.pipeline import Pipeline
+from arxiv_astro.report import generate_report
 from arxiv_astro.settings import Settings, debug_log, set_debug
 from arxiv_astro.workflows import (
     build_content_context,
@@ -49,6 +52,14 @@ def build_parser() -> argparse.ArgumentParser:
     explain_parser.add_argument("--input", required=True, help="content.json or manifest.json path from content")
     explain_parser.add_argument("--debug", action="store_true", help="Print debug information to stderr")
 
+    report_parser = subparsers.add_parser("report", help="Generate a static HTML report from reader blocks")
+    report_parser.add_argument("--input", required=True, help="reader.json or manifest.json path from run/explain")
+    report_parser.add_argument("--debug", action="store_true", help="Print debug information to stderr")
+
+    serve_parser = subparsers.add_parser("serve", help="Serve OUTPUT_DIR over localhost for reports")
+    serve_parser.add_argument("--port", type=int, default=8765, help="Local HTTP port")
+    serve_parser.add_argument("--debug", action="store_true", help="Print debug information to stderr")
+
     add_common_args(parser)
     return parser
 
@@ -63,7 +74,7 @@ def main(argv: list[str] | None = None) -> int:
     load_dotenv()
     args = build_parser().parse_args(argv)
     command = args.command or "fetch"
-    if command not in {"content", "explain"} and not args.category:
+    if command not in {"content", "explain", "report", "serve"} and not args.category:
         raise SystemExit("--category is required")
 
     settings = Settings.from_env()
@@ -83,6 +94,10 @@ def main(argv: list[str] | None = None) -> int:
             return run_content(Path(args.input), settings)
         if command == "explain":
             return run_explain(Path(args.input), settings)
+        if command == "report":
+            return run_report(Path(args.input), settings)
+        if command == "serve":
+            return run_serve(settings, port=args.port)
 
         return run_pipeline(args.category, args.max_results, settings)
     except arxiv.ArxivError as exc:
@@ -168,6 +183,28 @@ def run_pipeline(category: str, max_results: int, settings: Settings) -> int:
         blocks = pipeline.run(category, max_results, on_update=live.on_update)
     output_path = write_reader_outputs(blocks, Path(settings.output_dir), category, max_results)
     print(output_path)
+    return 0
+
+
+def run_report(input_path: Path, settings: Settings) -> int:
+    debug_log("generating html report", input=str(input_path), output_dir=settings.output_dir)
+    output_path = generate_report(input_path, Path(settings.output_dir))
+    print(output_path)
+    return 0
+
+
+def run_serve(settings: Settings, port: int = 8765) -> int:
+    output_root = Path(settings.output_dir).resolve()
+    output_root.mkdir(parents=True, exist_ok=True)
+    handler = functools.partial(SimpleHTTPRequestHandler, directory=str(output_root))
+    server = ThreadingHTTPServer(("localhost", port), handler)
+    print(f"Serving {output_root} at http://localhost:{port}/")
+    try:
+        server.serve_forever()
+    except KeyboardInterrupt:
+        print("\nStopped")
+    finally:
+        server.server_close()
     return 0
 
 

@@ -46,10 +46,22 @@ def write_figure_set(figure_set: FigureSet, output_root: Path, run_date: str | N
 
 def write_interpretation_block(block: PaperBlock, output_root: Path, run_date: str | None = None) -> Path:
     path = paper_file(output_root, block.paper.arxiv_id, "interpretation.json")
-    if path.exists():
+    if path.exists() and cached_interpretation_is_current(path, block):
         return path
     block.interpreted_date = run_date or current_date()
     return write_json(path, block)
+
+
+def cached_interpretation_is_current(path: Path, block: PaperBlock) -> bool:
+    try:
+        existing = PaperBlock.model_validate_json(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return False
+    return (
+        existing.llm_metadata == block.llm_metadata
+        and existing.llm_interpretation == block.llm_interpretation
+        and existing.source == block.source
+    )
 
 
 def write_reader_block(block: ReaderPaperBlock, output_root: Path, run_date: str | None = None) -> Path:

@@ -7,11 +7,13 @@ from arxiv_astro.content_pipeline import load_content_blocks
 from arxiv_astro.content_io import read_content_blocks
 from arxiv_astro.explain_pipeline import build_image_context, build_llm_input, explain_content_blocks
 from arxiv_astro.metadata_io import read_metadata
-from arxiv_astro.models import ArticleImage, ContentType, LLMInterpretation, PaperContent, PaperContentBlock
+from arxiv_astro.models import ArticleImage, ContentType, LLMInterpretation, LLMMetadata, PaperContent, PaperContentBlock
+from arxiv_astro.normalize import build_paper_block
 from arxiv_astro.writer import (
     write_content_block,
     write_content_outputs,
     write_fetch_outputs,
+    write_interpretation_block,
     write_interpretation_outputs,
     write_metadata_block,
 )
@@ -215,3 +217,33 @@ def test_write_interpretations(sample_paper, tmp_path: Path) -> None:
     reader_payload = json.loads(reader_path.read_text(encoding="utf-8"))
     assert reader_payload["content"]["text"] == "abstract"
     assert reader_payload["figures"]["figures"] == []
+
+
+def test_write_interpretation_block_overwrites_stale_cache(sample_paper, sample_interpretation, tmp_path: Path) -> None:
+    content = PaperContent(content_type=ContentType.ABSTRACT, text="abstract", text_chars=8)
+    old_metadata = LLMMetadata(
+        provider="openai-compatible",
+        model="model",
+        task="paper_interpretation",
+        prompt_version="v1",
+        schema_version="v1",
+        max_input_chars=100,
+    )
+    new_metadata = LLMMetadata(
+        provider="openai-compatible",
+        model="model",
+        task="paper_interpretation",
+        prompt_version="v2",
+        schema_version="v2",
+        max_input_chars=400000,
+    )
+    old_block = build_paper_block(sample_paper, content, sample_interpretation, "abstract", old_metadata)
+    new_block = build_paper_block(sample_paper, content, sample_interpretation, "abstract", new_metadata)
+
+    path = write_interpretation_block(old_block, tmp_path, run_date="2024-01-01")
+    write_interpretation_block(new_block, tmp_path, run_date="2024-01-02")
+
+    payload = json.loads(path.read_text(encoding="utf-8"))
+    assert payload["llm_metadata"]["prompt_version"] == "v2"
+    assert payload["llm_metadata"]["max_input_chars"] == 400000
+    assert payload["interpreted_date"] == "2024-01-02"

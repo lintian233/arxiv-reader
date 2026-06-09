@@ -266,6 +266,20 @@ def test_cli_parser_supports_explain() -> None:
     assert args.input == "data/papers/2401.12345v1/content.json"
 
 
+def test_cli_parser_supports_report() -> None:
+    args = build_parser().parse_args(["report", "--input", "data/runs/2024-01-01_astro-ph.IM/manifest.json"])
+
+    assert args.command == "report"
+    assert args.input == "data/runs/2024-01-01_astro-ph.IM/manifest.json"
+
+
+def test_cli_parser_supports_serve() -> None:
+    args = build_parser().parse_args(["serve", "--port", "8766"])
+
+    assert args.command == "serve"
+    assert args.port == 8766
+
+
 def test_cli_parser_keeps_legacy_fetch_shape() -> None:
     args = build_parser().parse_args(["--category", "astro-ph.CO", "--max-results", "2"])
 
@@ -510,3 +524,43 @@ def test_cli_explain_uses_cached_interpretation(monkeypatch, sample_paper, sampl
     interpretation_path = Path(manifest["outputs"][0]["interpretation"])
     payload = json.loads(interpretation_path.read_text(encoding="utf-8"))
     assert payload["llm_interpretation"]["one_sentence"] == "一句话总结"
+
+
+def test_cli_report_generates_html(monkeypatch, sample_paper, sample_interpretation, tmp_path: Path, capsys) -> None:
+    content = PaperContent(content_type=ContentType.ABSTRACT, text="abstract", text_chars=8)
+    reader = build_reader_block(content, build_paper_block(sample_paper, content, sample_interpretation, "abstract"))
+    manifest_path = write_reader_outputs([reader], tmp_path, "astro-ph.IM", max_results=1, run_date="2024-01-01")
+
+    monkeypatch.setenv("OUTPUT_DIR", str(tmp_path))
+
+    assert cli.main(["report", "--input", str(manifest_path)]) == 0
+
+    output = Path(capsys.readouterr().out.strip())
+    assert output == tmp_path / "runs" / "2024-01-01_astro-ph.IM" / "report.html"
+    assert sample_paper.title in output.read_text(encoding="utf-8")
+
+
+def test_cli_serve_uses_output_dir_and_port(monkeypatch, tmp_path: Path, capsys) -> None:
+    seen = {}
+
+    class FakeServer:
+        def __init__(self, address, handler) -> None:
+            seen["address"] = address
+            seen["handler"] = handler
+            seen["closed"] = False
+
+        def serve_forever(self) -> None:
+            seen["served"] = True
+
+        def server_close(self) -> None:
+            seen["closed"] = True
+
+    monkeypatch.setenv("OUTPUT_DIR", str(tmp_path))
+    monkeypatch.setattr(cli, "ThreadingHTTPServer", FakeServer)
+
+    assert cli.main(["serve", "--port", "8766"]) == 0
+
+    assert seen["address"] == ("localhost", 8766)
+    assert seen["served"] is True
+    assert seen["closed"] is True
+    assert f"Serving {tmp_path.resolve()} at http://localhost:8766/" in capsys.readouterr().out
