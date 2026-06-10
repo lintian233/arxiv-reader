@@ -1,9 +1,13 @@
 # arxiv-astro
 
+[![Run Tests](https://github.com/lintian233/arxiv-astro/actions/workflows/tests.yml/badge.svg)](https://github.com/lintian233/arxiv-astro/actions/workflows/tests.yml)
+[![codecov](https://codecov.io/gh/lintian233/arxiv-astro/branch/main/graph/badge.svg)](https://codecov.io/gh/lintian233/arxiv-astro)
+[![Python](https://img.shields.io/badge/python-3.11%2B-blue)](https://www.python.org/)
+[![License: GPL v2](https://img.shields.io/badge/License-GPL%20v2-blue.svg)](LICENSE)
+
 A local arXiv research reader for discovering, selecting, and interpreting recent astronomy papers with LLM assistance.
 
 ![arxiv-astro reader preview](docs/intro.png)
-
 
 ## What Is This?
 
@@ -14,6 +18,7 @@ Input:
 - an arXiv category or category group
 - optional research interests
 - an OpenAI-compatible LLM endpoint
+
 
 Pipeline:
 
