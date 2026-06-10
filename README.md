@@ -1,7 +1,7 @@
 # arxiv-astro
 
 [![Run Tests](https://github.com/lintian233/arxiv-astro/actions/workflows/tests.yml/badge.svg)](https://github.com/lintian233/arxiv-astro/actions/workflows/tests.yml)
-[![codecov](https://codecov.io/gh/lintian233/arxiv-astro/branch/main/graph/badge.svg)](https://codecov.io/gh/lintian233/arxiv-astro)
+[![codecov](https://codecov.io/gh/lintian233/arxiv-astro/branch/main/graph/badge.svg)](https://app.codecov.io/gh/lintian233/arxiv-reader)
 [![Python](https://img.shields.io/badge/python-3.11%2B-blue)](https://www.python.org/)
 [![License: GPL v2](https://img.shields.io/badge/License-GPL%20v2-blue.svg)](LICENSE)
 
