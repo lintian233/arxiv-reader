@@ -450,7 +450,7 @@ def test_cli_fetch_writes_metadata(monkeypatch, sample_paper, tmp_path: Path, ca
     assert output.endswith("manifest.json")
     assert "[DEBUG] cli started" in captured.err
     assert "[1/1] Fetch recent arXiv metadata" in captured.err
-    assert "arxiv-astro content --input" in captured.err
+    assert "arxiv-reader content --input" in captured.err
     assert "manifest.json" in captured.err
     manifest = json.loads(Path(output).read_text(encoding="utf-8"))
     metadata_path = Path(manifest["outputs"][0]["metadata"])
@@ -682,7 +682,7 @@ def test_cli_report_generates_html(monkeypatch, sample_paper, sample_interpretat
     output = Path(captured.out.strip())
     assert output == tmp_path / "runs" / "2024-01-01_astro-ph.IM" / "report.html"
     assert "report:" in captured.err
-    assert "arxiv-astro serve --port 8765" in captured.err
+    assert "arxiv-reader serve --port 8765" in captured.err
     assert sample_paper.title in output.read_text(encoding="utf-8")
 
 

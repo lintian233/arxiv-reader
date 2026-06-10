@@ -109,7 +109,7 @@ class PipelineLiveRenderer:
         return Group(self.render_table(), self.render_latest_result())
 
     def render_table(self) -> Table:
-        table = Table(title=f"arxiv-astro pipeline ({len(self.rows)}/{self.total})")
+        table = Table(title=f"arxiv-reader pipeline ({len(self.rows)}/{self.total})")
         table.add_column("#", justify="right", no_wrap=True)
         table.add_column("arXiv ID", no_wrap=True)
         table.add_column("Title")

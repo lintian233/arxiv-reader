@@ -132,7 +132,7 @@ def run_fetch(category: str, max_results: int, settings: Settings) -> int:
     debug_log("writing metadata", output_dir=settings.output_dir)
     output_path = write_fetch_outputs(papers, Path(settings.output_dir), category, max_results)
     render_fetch_summary(papers, category, max_results, output_path)
-    render_next_steps([f"arxiv-astro content --input {output_path}"])
+    render_next_steps([f"arxiv-reader content --input {output_path}"])
     print(output_path)
     return 0
 
@@ -260,8 +260,8 @@ def run_pipeline(
     render_output_path("saved", output_path)
     render_next_steps(
         [
-            f"arxiv-astro report --input {output_path}",
-            "arxiv-astro serve --port 8765",
+            f"arxiv-reader report --input {output_path}",
+            "arxiv-reader serve --port 8765",
         ]
     )
     print(output_path)
@@ -272,7 +272,7 @@ def run_report(input_path: Path, settings: Settings) -> int:
     debug_log("generating html report", input=str(input_path), output_dir=settings.output_dir)
     output_path = generate_report(input_path, Path(settings.output_dir))
     render_output_path("report", output_path)
-    render_next_steps(["arxiv-astro serve --port 8765"])
+    render_next_steps(["arxiv-reader serve --port 8765"])
     print(output_path)
     return 0
 

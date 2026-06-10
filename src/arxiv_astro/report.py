@@ -66,7 +66,7 @@ def build_report_context(
     category = manifest.category if manifest else infer_category(blocks)
     run_date = manifest.run_date if manifest else infer_run_date(blocks)
     return ReportContext(
-        title=f"arxiv-astro report · {category}",
+        title=f"arxiv-reader report · {category}",
         category=category,
         run_date=run_date,
         paper_count=len(blocks),

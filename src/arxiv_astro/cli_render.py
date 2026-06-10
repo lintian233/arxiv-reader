@@ -38,7 +38,7 @@ def render_fetch_summary(
     console: Console | None = None,
 ) -> None:
     target = console or default_console()
-    table = Table(title=f"arxiv-astro fetch: {category} ({len(papers)}/{max_results})")
+    table = Table(title=f"arxiv-reader fetch: {category} ({len(papers)}/{max_results})")
     table.add_column("#", justify="right", no_wrap=True)
     table.add_column("arXiv ID", no_wrap=True)
     table.add_column("Category", no_wrap=True)

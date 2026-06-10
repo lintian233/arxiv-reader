@@ -124,5 +124,5 @@ def test_pipeline_live_renderer_context_manager(sample_paper) -> None:
         renderer.on_update({"event": "paper", "index": 1, "total": 1, "paper": sample_paper, "status": "done"})
 
     rendered = output.getvalue()
-    assert "arxiv-astro pipeline" in rendered
+    assert "arxiv-reader pipeline" in rendered
     assert sample_paper.arxiv_id in rendered

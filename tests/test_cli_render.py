@@ -37,7 +37,7 @@ def test_render_fetch_summary_shows_metadata(sample_paper) -> None:
     render_fetch_summary([sample_paper], "astro-ph.IM", 1, Path("data/runs/run/manifest.json"), console)
 
     text = output.getvalue()
-    assert "arxiv-astro fetch: astro-ph.IM (1/1)" in text
+    assert "arxiv-reader fetch: astro-ph.IM (1/1)" in text
     assert sample_paper.arxiv_id in text
     assert sample_paper.primary_category in text
     assert sample_paper.title in text
@@ -101,13 +101,13 @@ def test_render_stage_and_next_steps() -> None:
     console, output = capture_console()
 
     render_stage("1/4", "Fetch candidates", "category: astro-ph  candidates: 60", console)
-    render_next_steps(["arxiv-astro report --input data/runs/run/manifest.json"], console)
+    render_next_steps(["arxiv-reader report --input data/runs/run/manifest.json"], console)
 
     text = output.getvalue()
     assert "[1/4] Fetch candidates" in text
     assert "category: astro-ph  candidates: 60" in text
     assert "Next:" in text
-    assert "arxiv-astro report --input data/runs/run/manifest.json" in text
+    assert "arxiv-reader report --input data/runs/run/manifest.json" in text
 
 
 def test_render_pipeline_summary_shows_all_completed_blocks(sample_paper) -> None:

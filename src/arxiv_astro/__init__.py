@@ -1,4 +1,4 @@
-"""arxiv-astro package."""
+"""arxiv-reader package."""
 
 __all__ = ["__version__"]
 

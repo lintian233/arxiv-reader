@@ -1,17 +1,17 @@
-# arxiv-astro
+# arxiv-reader
 
-[![Run Tests](https://github.com/lintian233/arxiv-astro/actions/workflows/tests.yml/badge.svg)](https://github.com/lintian233/arxiv-astro/actions/workflows/tests.yml)
-[![codecov](https://codecov.io/gh/lintian233/arxiv-astro/branch/main/graph/badge.svg)](https://app.codecov.io/gh/lintian233/arxiv-reader)
+[![Run Tests](https://github.com/lintian233/arxiv-reader/actions/workflows/tests.yml/badge.svg)](https://github.com/lintian233/arxiv-reader/actions/workflows/tests.yml)
+[![codecov](https://codecov.io/gh/lintian233/arxiv-reader/badge.svg?branch=main)](https://codecov.io/gh/lintian233/arxiv-reader)
 [![Python](https://img.shields.io/badge/python-3.11%2B-blue)](https://www.python.org/)
 [![License: GPL v2](https://img.shields.io/badge/License-GPL%20v2-blue.svg)](LICENSE)
 
 A local arXiv research reader for discovering, selecting, and interpreting recent astronomy papers with LLM assistance.
 
-![arxiv-astro reader preview](docs/intro.png)
+![arxiv-reader preview](docs/intro.png)
 
 ## What Is This?
 
-`arxiv-astro` is a local reading pipeline for astronomy papers.
+`arxiv-reader` is a local reading pipeline for astronomy papers.
 
 Input:
 
@@ -37,7 +37,7 @@ pip install -e .
 Check available CLI options:
 
 ```bash
-arxiv-astro -h
+arxiv-reader -h
 ```
 
 2. Configure DeepSeek in `.env`:
@@ -51,7 +51,7 @@ DEEPSEEK_MODEL=deepseek-v4-pro
 3. Run a complete reading pipeline:
 
 ```bash
-arxiv-astro run \
+arxiv-reader run \
   --category astro-ph \
   --fetch-results 10 \
   --max-results 2 \
@@ -61,13 +61,13 @@ arxiv-astro run \
 4. Generate an HTML report from the final manifest:
 
 ```bash
-arxiv-astro report --input data/runs/2026-date_astro-ph.IM/manifest.json
+arxiv-reader report --input data/runs/2026-date_astro-ph.IM/manifest.json
 ```
 
 5. Serve reports and downloaded figures locally:
 
 ```bash
-arxiv-astro serve --port 8765
+arxiv-reader serve --port 8765
 ```
 
 Open:
@@ -108,7 +108,7 @@ Advanced options:
 Debug logging example:
 
 ```bash
-DEBUG=1 arxiv-astro fetch --category astro-ph.IM --max-results 5
+DEBUG=1 arxiv-reader fetch --category astro-ph.IM --max-results 5
 ```
 
 ## Category Syntax
