@@ -5,50 +5,58 @@
 [![Python](https://img.shields.io/badge/python-3.11%2B-blue)](https://www.python.org/)
 [![License: GPL v2](https://img.shields.io/badge/License-GPL%20v2-blue.svg)](LICENSE)
 
-A local arXiv research reader for discovering, selecting, and interpreting recent astronomy papers with LLM assistance.
+`arxiv-reader` is a local research reading pipeline for recent arXiv papers. It fetches papers from a category, optionally selects the most relevant candidates with an LLM, downloads full text and figures, and produces a structured academic reading report.
 
-![arxiv-reader preview](docs/intro.png)
+![arxiv-reader preview](docs/demo.gif)
 
-## What Is This?
+## Overview
 
-`arxiv-reader` is a local reading pipeline for astronomy papers.
-
-Input:
-
-- an arXiv category or category group
-- optional research interests
-- an OpenAI-compatible LLM endpoint
-
-
-Pipeline:
+The project is designed for literature triage in astronomy and related research workflows: fast enough for daily arXiv scanning, structured enough for later reuse, and local-first so downloaded papers, figures, and interpretations remain available across runs.
 
 ```text
-fetch metadata -> select papers -> load text and figures -> interpret -> report
+arXiv metadata -> LLM selection -> full text and figures -> interpretation -> HTML report
 ```
+
+Typical inputs:
+
+- an arXiv category, archive group, or category combination
+- optional research interests for paper selection
+- an OpenAI-compatible LLM endpoint
+
+Typical outputs:
+
+- a run manifest in the current project directory
+- a reusable paper cache under the user data directory
+- a local HTML report with selected figures and structured interpretation
 
 ## Quick Start
 
-1. Install locally:
+Install the project locally:
 
 ```bash
+git clone https://github.com/lintian233/arxiv-reader.git
+cd arxiv-reader
 pip install -e .
 ```
 
-Check available CLI options:
+Check the CLI:
 
 ```bash
 arxiv-reader -h
 ```
 
-2. Configure DeepSeek in `.env`:
+Configure the LLM endpoint:
 
 ```bash
+mkdir -p ~/.config/arxiv-reader
+cat > ~/.config/arxiv-reader/.env <<'EOF'
 DEEPSEEK_API_KEY=your-api-key
 DEEPSEEK_BASE_URL=https://api.deepseek.com
 DEEPSEEK_MODEL=deepseek-v4-pro
+EOF
 ```
 
-3. Run a complete reading pipeline:
+Run a complete reading pipeline:
 
 ```bash
 arxiv-reader run \
@@ -58,13 +66,13 @@ arxiv-reader run \
   --interests "papers related to the FAST radio telescope and radio interferometric methods"
 ```
 
-4. Generate an HTML report from the final manifest:
+The command prints the generated `manifest.json` path when it finishes. Use that path to build the HTML report:
 
 ```bash
-arxiv-reader report --input data/runs/2026-date_astro-ph.IM/manifest.json
+arxiv-reader report --input runs/2026-06-11_astro-ph/manifest.json
 ```
 
-5. Serve reports and downloaded figures locally:
+Serve reports and downloaded figures locally:
 
 ```bash
 arxiv-reader serve --port 8765
@@ -76,26 +84,86 @@ Open:
 http://localhost:8765/
 ```
 
-## Configuration
+## Reading Workflow
 
-For normal use, you only need to set the API key. Optionally change the model name if your DeepSeek account uses a different model.
+For normal use, the workflow is:
 
 ```bash
-DEEPSEEK_API_KEY=your-api-key
-DEEPSEEK_MODEL=deepseek-v4-pro
+arxiv-reader run --category astro-ph.IM --max-results 2
+arxiv-reader report --input runs/2026-06-11_astro-ph.IM/manifest.json
+arxiv-reader serve --port 8765
 ```
 
-You can put them in a `.env` file or export them in your shell.
+Use `--interests` when you want the model to select a smaller reading set from a larger metadata batch:
+
+```bash
+arxiv-reader run \
+  --category astro-ph.IM,astro-ph.HE \
+  --fetch-results 50 \
+  --max-results 5 \
+  --interests "FRB localization, radio interferometry, transient detection pipelines"
+```
+
+## Local Data Layout
+
+`arxiv-reader` separates long-lived paper data from per-run research outputs.
+
+Running `arxiv-reader run ...` creates a `runs/` directory in the current working directory:
+
+```text
+runs/
+└── 2026-06-11_astro-ph/
+    ├── manifest.json
+    ├── selection.json
+    └── report.html
+```
+
+The paper cache is stored separately:
+
+```text
+~/.local/share/arxiv-reader/
+└── papers/
+    └── 2606.xxxxxv1/
+        ├── metadata.json
+        ├── content.json
+        ├── figures.json
+        ├── interpretation.json
+        ├── reader.json
+        ├── paper.pdf
+        └── figures/
+```
+
+`manifest.json` records the run and points to the cached paper blocks. `selection.json` stores the LLM selection result when interests are provided. `report.html` is the local reading report for that run.
+
+## Configuration
+
+For most users, only the API key and model need to be configured:
+
+```bash
+mkdir -p ~/.config/arxiv-reader
+cat > ~/.config/arxiv-reader/.env <<'EOF'
+DEEPSEEK_API_KEY=your-api-key
+DEEPSEEK_BASE_URL=https://api.deepseek.com
+DEEPSEEK_MODEL=deepseek-v4-pro
+EOF
+```
+
+Configuration is loaded in this order:
+
+```text
+shell environment > .env in current directory > ~/.config/arxiv-reader/.env > defaults
+```
 
 Advanced options:
 
 | Variable | Default | Purpose |
 | --- | --- | --- |
 | `DEEPSEEK_API_KEY` | empty | API key used by the OpenAI-compatible LLM client. Required for selection and interpretation. |
-| `DEEPSEEK_BASE_URL` | `https://api.deepseek.com` | OpenAI-compatible API endpoint. Usually does not need to change. |
+| `DEEPSEEK_BASE_URL` | `https://api.deepseek.com` | OpenAI-compatible API endpoint. |
 | `DEEPSEEK_MODEL` | `deepseek-v4-pro` | Model used for paper selection and interpretation. |
-| `OUTPUT_DIR` | `data` | Root directory for paper cache, run manifests, figures, and reports. |
-| `REQUEST_TIMEOUT` | `30` | Timeout in seconds for arXiv/content/figure HTTP requests. |
+| `PAPER_DATA_DIR` | `~/.local/share/arxiv-reader` | Long-lived paper cache root for PDFs, figures, and normalized paper blocks. |
+| `RUNS_DIR` | `.` | Root directory for run manifests, selection files, and generated reports. |
+| `REQUEST_TIMEOUT` | `30` | Timeout in seconds for arXiv, content, and figure HTTP requests. |
 | `LLM_REQUEST_TIMEOUT` | `180` | Timeout in seconds for LLM requests. |
 | `MAX_INPUT_CHARS` | `400000` | Maximum paper text characters sent to the interpretation task. |
 | `LLM_MAX_OUTPUT_TOKENS` | `12000` | Maximum output tokens requested from the LLM. |

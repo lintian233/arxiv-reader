@@ -6,7 +6,7 @@ from pathlib import Path
 import arxiv
 
 from arxiv_astro import cli
-from arxiv_astro.cli import build_parser
+from arxiv_astro.cli import build_parser, load_environment
 from arxiv_astro.models import (
     ContentType,
     LLMInterpretation,
@@ -20,7 +20,7 @@ from arxiv_astro.models import (
 from arxiv_astro.normalize import build_paper_block, build_reader_block, truncate_for_llm
 from arxiv_astro.pipeline import Pipeline
 from arxiv_astro.selection import PaperSelector
-from arxiv_astro.settings import Settings, debug_log, parse_bool, set_debug
+from arxiv_astro.settings import Settings, debug_log, default_data_dir, parse_bool, set_debug
 from arxiv_astro.writer import (
     write_content_block,
     write_content_outputs,
@@ -343,6 +343,48 @@ def test_settings_from_env(monkeypatch) -> None:
     set_debug(False)
 
 
+def test_settings_default_output_dir_uses_user_data_dir(monkeypatch, tmp_path: Path) -> None:
+    monkeypatch.delenv("OUTPUT_DIR", raising=False)
+    monkeypatch.setenv("XDG_DATA_HOME", str(tmp_path / "share"))
+
+    settings = Settings.from_env()
+
+    assert settings.output_dir == default_data_dir()
+    assert settings.output_dir == str(tmp_path / "share" / "arxiv-reader")
+
+
+def test_load_environment_priority(monkeypatch, tmp_path: Path) -> None:
+    config_root = tmp_path / "config"
+    work_dir = tmp_path / "work"
+    app_config = config_root / "arxiv-reader"
+    app_config.mkdir(parents=True)
+    work_dir.mkdir()
+    (app_config / ".env").write_text(
+        "DEEPSEEK_MODEL=config-model\n"
+        "DEEPSEEK_BASE_URL=https://config.example\n"
+        "OUTPUT_DIR=config-output\n",
+        encoding="utf-8",
+    )
+    (work_dir / ".env").write_text(
+        "DEEPSEEK_MODEL=cwd-model\n"
+        "DEEPSEEK_API_KEY=cwd-key\n"
+        "OUTPUT_DIR=cwd-output\n",
+        encoding="utf-8",
+    )
+    for key in ("DEEPSEEK_MODEL", "DEEPSEEK_API_KEY", "OUTPUT_DIR"):
+        monkeypatch.delenv(key, raising=False)
+    monkeypatch.setenv("DEEPSEEK_BASE_URL", "https://shell.example")
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(config_root))
+    monkeypatch.chdir(work_dir)
+
+    load_environment()
+
+    assert Settings.from_env().api_key == "cwd-key"
+    assert Settings.from_env().model == "cwd-model"
+    assert Settings.from_env().base_url == "https://shell.example"
+    assert Settings.from_env().output_dir == "cwd-output"
+
+
 def test_debug_log_respects_global_switch(capsys) -> None:
     set_debug(False)
     debug_log("hidden")
@@ -659,6 +701,9 @@ def test_cli_explain_uses_cached_interpretation(monkeypatch, sample_paper, sampl
             raise AssertionError("LLM should not run on cache hit")
 
     monkeypatch.setenv("OUTPUT_DIR", str(tmp_path))
+    monkeypatch.setenv("DEEPSEEK_MODEL", "deepseek-v4-pro")
+    monkeypatch.setenv("MAX_INPUT_CHARS", "400000")
+    monkeypatch.setenv("LLM_MAX_OUTPUT_TOKENS", "12000")
     monkeypatch.setattr(cli, "LLMClient", FailingExplainLLMClient)
 
     assert cli.main(["explain", "--input", str(content_manifest)]) == 0
@@ -712,27 +757,22 @@ def test_cli_run_reports_selection_error(monkeypatch, tmp_path: Path, capsys) ->
     assert "paper selection failed: selection failed" in capsys.readouterr().err
 
 
-def test_cli_serve_uses_output_dir_and_port(monkeypatch, tmp_path: Path, capsys) -> None:
+def test_cli_serve_uses_data_and_runs_dirs(monkeypatch, tmp_path: Path) -> None:
     seen = {}
 
-    class FakeServer:
-        def __init__(self, address, handler) -> None:
-            seen["address"] = address
-            seen["handler"] = handler
-            seen["closed"] = False
+    def fake_serve_local(paper_root: Path, runs_root: Path, port: int) -> None:
+        seen["paper_root"] = paper_root
+        seen["runs_root"] = runs_root
+        seen["port"] = port
 
-        def serve_forever(self) -> None:
-            seen["served"] = True
-
-        def server_close(self) -> None:
-            seen["closed"] = True
-
-    monkeypatch.setenv("OUTPUT_DIR", str(tmp_path))
-    monkeypatch.setattr(cli, "ThreadingHTTPServer", FakeServer)
+    monkeypatch.setenv("PAPER_DATA_DIR", str(tmp_path / "paper-data"))
+    monkeypatch.setenv("RUNS_DIR", str(tmp_path / "workspace"))
+    monkeypatch.setattr(cli, "serve_local", fake_serve_local)
 
     assert cli.main(["serve", "--port", "8766"]) == 0
 
-    assert seen["address"] == ("localhost", 8766)
-    assert seen["served"] is True
-    assert seen["closed"] is True
-    assert f"Serving {tmp_path.resolve()} at http://localhost:8766/" in capsys.readouterr().out
+    assert seen == {
+        "paper_root": tmp_path / "paper-data",
+        "runs_root": tmp_path / "workspace",
+        "port": 8766,
+    }

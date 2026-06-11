@@ -70,60 +70,64 @@ def write_reader_block(block: ReaderPaperBlock, output_root: Path, run_date: str
     return write_json(paper_file(output_root, block.paper.arxiv_id, "reader.json"), block)
 
 
-def write_selection_block(selection: SelectionBlock, output_root: Path, run_date: str | None = None) -> Path:
+def write_selection_block(selection: SelectionBlock, runs_root: Path, run_date: str | None = None) -> Path:
     effective_date = run_date or current_date()
     selection.selection_date = effective_date
-    return write_json(selection_path(output_root, effective_date, selection.category), selection)
+    return write_json(selection_path(runs_root, effective_date, selection.category), selection)
 
 
 def write_fetch_outputs(
     papers: list[PaperMetadata],
-    output_root: Path,
+    paper_root: Path,
     category: str,
     max_results: int,
     run_date: str | None = None,
     selection_path: Path | None = None,
+    runs_root: Path | None = None,
 ) -> Path:
     effective_date = run_date or current_date()
+    effective_runs_root = runs_root or paper_root
     outputs = [
-        RunOutput(arxiv_id=paper.arxiv_id, metadata=write_metadata_block(paper, output_root, effective_date))
+        RunOutput(arxiv_id=paper.arxiv_id, metadata=write_metadata_block(paper, paper_root, effective_date).resolve())
         for paper in papers
     ]
-    return write_manifest(output_root, category, max_results, effective_date, outputs, selection_path=selection_path)
+    return write_manifest(effective_runs_root, category, max_results, effective_date, outputs, selection_path=selection_path)
 
 
 def write_content_outputs(
     blocks: list[PaperContentBlock],
-    output_root: Path,
+    paper_root: Path,
     category: str,
     max_results: int,
     metadata_paths: dict[str, Path] | None = None,
     figure_sets: dict[str, FigureSet] | None = None,
     run_date: str | None = None,
     selection_path: Path | None = None,
+    runs_root: Path | None = None,
 ) -> Path:
     effective_date = run_date or current_date()
+    effective_runs_root = runs_root or paper_root
     outputs = []
     for block in blocks:
-        content_path = write_content_block(block, output_root, effective_date)
-        figures_path = write_figure_set(figure_sets[block.paper.arxiv_id], output_root, effective_date) if figure_sets else None
+        content_path = write_content_block(block, paper_root, effective_date).resolve()
+        figures_path = write_figure_set(figure_sets[block.paper.arxiv_id], paper_root, effective_date).resolve() if figure_sets else None
         outputs.append(
             RunOutput(
                 arxiv_id=block.paper.arxiv_id,
-                metadata=metadata_paths.get(block.paper.arxiv_id, default_metadata_path(output_root, block.paper.arxiv_id))
+                metadata=metadata_paths.get(block.paper.arxiv_id, default_metadata_path(paper_root, block.paper.arxiv_id)).resolve()
                 if metadata_paths
-                else default_metadata_path(output_root, block.paper.arxiv_id),
+                else default_metadata_path(paper_root, block.paper.arxiv_id).resolve(),
                 content=content_path,
                 figures=figures_path,
             )
         )
-    return write_manifest(output_root, category, max_results, effective_date, outputs, selection_path=selection_path)
+    return write_manifest(effective_runs_root, category, max_results, effective_date, outputs, selection_path=selection_path)
 
 
 def write_interpretation_outputs(
     blocks: list[PaperBlock],
     contents: dict[str, PaperContentBlock],
-    output_root: Path,
+    paper_root: Path,
     category: str,
     max_results: int,
     metadata_paths: dict[str, Path] | None = None,
@@ -132,55 +136,59 @@ def write_interpretation_outputs(
     figure_paths: dict[str, Path] | None = None,
     run_date: str | None = None,
     selection_path: Path | None = None,
+    runs_root: Path | None = None,
 ) -> Path:
     effective_date = run_date or current_date()
+    effective_runs_root = runs_root or paper_root
     outputs = []
     for block in blocks:
         content_block = contents[block.paper.arxiv_id]
         figure_set = figure_sets.get(block.paper.arxiv_id) if figure_sets else None
-        interpretation_path = write_interpretation_block(block, output_root, effective_date)
+        interpretation_path = write_interpretation_block(block, paper_root, effective_date).resolve()
         if figure_paths and block.paper.arxiv_id in figure_paths:
-            figures_path = figure_paths[block.paper.arxiv_id]
+            figures_path = figure_paths[block.paper.arxiv_id].resolve()
         elif figure_set:
-            figures_path = write_figure_set(figure_set, output_root, effective_date)
+            figures_path = write_figure_set(figure_set, paper_root, effective_date).resolve()
         else:
             figures_path = None
-        reader_path = write_reader_block(build_reader_block(content_block.content, block, figure_set), output_root, effective_date)
+        reader_path = write_reader_block(build_reader_block(content_block.content, block, figure_set), paper_root, effective_date).resolve()
         outputs.append(
             RunOutput(
                 arxiv_id=block.paper.arxiv_id,
-                metadata=metadata_paths.get(block.paper.arxiv_id, default_metadata_path(output_root, block.paper.arxiv_id))
+                metadata=metadata_paths.get(block.paper.arxiv_id, default_metadata_path(paper_root, block.paper.arxiv_id)).resolve()
                 if metadata_paths
-                else default_metadata_path(output_root, block.paper.arxiv_id),
-                content=content_paths.get(block.paper.arxiv_id, default_content_path(output_root, block.paper.arxiv_id))
+                else default_metadata_path(paper_root, block.paper.arxiv_id).resolve(),
+                content=content_paths.get(block.paper.arxiv_id, default_content_path(paper_root, block.paper.arxiv_id)).resolve()
                 if content_paths
-                else default_content_path(output_root, block.paper.arxiv_id),
+                else default_content_path(paper_root, block.paper.arxiv_id).resolve(),
                 figures=figures_path,
                 interpretation=interpretation_path,
                 reader=reader_path,
             )
         )
-    return write_manifest(output_root, category, max_results, effective_date, outputs, selection_path=selection_path)
+    return write_manifest(effective_runs_root, category, max_results, effective_date, outputs, selection_path=selection_path)
 
 
 def write_reader_outputs(
     blocks: list[ReaderPaperBlock],
-    output_root: Path,
+    paper_root: Path,
     category: str,
     max_results: int,
     run_date: str | None = None,
     selection_path: Path | None = None,
+    runs_root: Path | None = None,
 ) -> Path:
     effective_date = run_date or current_date()
+    effective_runs_root = runs_root or paper_root
     outputs = []
     for block in blocks:
-        metadata_path = write_metadata_block(block.paper, output_root, effective_date)
+        metadata_path = write_metadata_block(block.paper, paper_root, effective_date).resolve()
         content_path = write_content_block(
             PaperContentBlock(paper=block.paper, content=block.content, loaded_date=effective_date),
-            output_root,
+            paper_root,
             effective_date,
-        )
-        figures_path = write_figure_set(block.figures, output_root, effective_date) if block.figures else None
+        ).resolve()
+        figures_path = write_figure_set(block.figures, paper_root, effective_date).resolve() if block.figures else None
         interpretation_path = write_interpretation_block(
             PaperBlock(
                 paper=block.paper,
@@ -189,10 +197,10 @@ def write_reader_outputs(
                 llm_metadata=block.llm_metadata,
                 interpreted_date=effective_date,
             ),
-            output_root,
+            paper_root,
             effective_date,
-        )
-        reader_path = write_reader_block(block, output_root, effective_date)
+        ).resolve()
+        reader_path = write_reader_block(block, paper_root, effective_date).resolve()
         outputs.append(
             RunOutput(
                 arxiv_id=block.paper.arxiv_id,
@@ -203,11 +211,11 @@ def write_reader_outputs(
                 reader=reader_path,
             )
         )
-    return write_manifest(output_root, category, max_results, effective_date, outputs, selection_path=selection_path)
+    return write_manifest(effective_runs_root, category, max_results, effective_date, outputs, selection_path=selection_path)
 
 
 def write_manifest(
-    output_root: Path,
+    runs_root: Path,
     category: str,
     max_results: int,
     run_date: str,
@@ -223,7 +231,7 @@ def write_manifest(
         outputs=outputs,
         selection=selection_path,
     )
-    return write_json(output_root / "runs" / manifest.run_id / "manifest.json", manifest)
+    return write_json(run_manifest_path(runs_root, manifest.run_id), manifest)
 
 
 def write_json(path: Path, payload: object) -> Path:
@@ -252,8 +260,16 @@ def default_figures_path(output_root: Path, arxiv_id: str) -> Path:
     return paper_file(output_root, arxiv_id, "figures.json")
 
 
-def selection_path(output_root: Path, run_date: str, category: str) -> Path:
-    return output_root / "runs" / run_id(run_date, category) / "selection.json"
+def run_file(runs_root: Path, run_id_value: str, filename: str) -> Path:
+    return runs_root / "runs" / run_id_value / filename
+
+
+def run_manifest_path(runs_root: Path, run_id_value: str) -> Path:
+    return run_file(runs_root, run_id_value, "manifest.json")
+
+
+def selection_path(runs_root: Path, run_date: str, category: str) -> Path:
+    return run_file(runs_root, run_id(run_date, category), "selection.json")
 
 
 def run_id(run_date: str, category: str) -> str:

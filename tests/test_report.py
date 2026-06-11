@@ -90,7 +90,7 @@ def test_generate_report_from_reader_json(sample_paper, sample_interpretation, t
 
     output_path = generate_report(reader_path, tmp_path)
 
-    assert output_path == tmp_path / "papers" / sample_paper.arxiv_id / "report.html"
+    assert output_path == tmp_path / "runs" / "2024-01-01_astro-ph.CO_2401.12345v1" / "report.html"
     html = output_path.read_text(encoding="utf-8")
     assert "No key figures were selected" in html
     assert "领域位置" in html

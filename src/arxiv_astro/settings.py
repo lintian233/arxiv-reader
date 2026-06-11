@@ -2,10 +2,14 @@ from __future__ import annotations
 
 import os
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Any
+
+from platformdirs import user_config_dir, user_data_dir
 
 
 DEBUG = False
+APP_NAME = "arxiv-reader"
 
 
 def parse_bool(value: str | None) -> bool:
@@ -25,12 +29,33 @@ def debug_log(message: str, **fields: Any) -> None:
     print(f"[DEBUG] {message}{suffix}", file=__import__("sys").stderr)
 
 
+def default_paper_data_dir() -> str:
+    return user_data_dir(APP_NAME, appauthor=False)
+
+
+def default_data_dir() -> str:
+    return default_paper_data_dir()
+
+
+def default_runs_dir() -> str:
+    return "."
+
+
+def default_config_dir() -> str:
+    return user_config_dir(APP_NAME, appauthor=False)
+
+
+def default_env_path() -> Path:
+    return Path(default_config_dir()) / ".env"
+
+
 @dataclass(frozen=True)
 class Settings:
     api_key: str
     base_url: str = "https://api.deepseek.com"
     model: str = "deepseek-v4-pro"
-    output_dir: str = "data"
+    paper_data_dir: str = ""
+    runs_dir: str = "."
     request_timeout: float = 30.0
     llm_request_timeout: float = 180.0
     max_input_chars: int = 400000
@@ -47,7 +72,8 @@ class Settings:
             api_key=os.getenv("DEEPSEEK_API_KEY", ""),
             base_url=os.getenv("DEEPSEEK_BASE_URL", cls.base_url),
             model=os.getenv("DEEPSEEK_MODEL", cls.model),
-            output_dir=os.getenv("OUTPUT_DIR", cls.output_dir),
+            paper_data_dir=os.getenv("PAPER_DATA_DIR", os.getenv("OUTPUT_DIR", default_paper_data_dir())),
+            runs_dir=os.getenv("RUNS_DIR", default_runs_dir()),
             request_timeout=float(os.getenv("REQUEST_TIMEOUT", cls.request_timeout)),
             llm_request_timeout=float(os.getenv("LLM_REQUEST_TIMEOUT", cls.llm_request_timeout)),
             max_input_chars=int(os.getenv("MAX_INPUT_CHARS", cls.max_input_chars)),
@@ -60,3 +86,7 @@ class Settings:
         )
         set_debug(settings.debug)
         return settings
+
+    @property
+    def output_dir(self) -> str:
+        return self.paper_data_dir

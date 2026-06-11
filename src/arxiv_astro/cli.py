@@ -1,13 +1,12 @@
 from __future__ import annotations
 
 import argparse
-import functools
-from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
+import os
 import sys
 from pathlib import Path
 
 import arxiv
-from dotenv import load_dotenv
+from dotenv import dotenv_values
 
 from arxiv_astro.arxiv_client import ArxivClient
 from arxiv_astro.cli_render import (
@@ -22,12 +21,13 @@ from arxiv_astro.content_io import read_content_blocks
 from arxiv_astro.content_loader import ContentLoader
 from arxiv_astro.figure_downloader import FigureDownloader
 from arxiv_astro.llm_client import LLMClient
+from arxiv_astro.local_server import serve_local
 from arxiv_astro.live_view import PipelineLiveRenderer
 from arxiv_astro.metadata_io import read_metadata
 from arxiv_astro.pipeline import PaperRun, Pipeline, emit_pipeline_started
 from arxiv_astro.report import generate_report
 from arxiv_astro.selection import PaperSelector, SelectionError
-from arxiv_astro.settings import Settings, debug_log, set_debug
+from arxiv_astro.settings import Settings, debug_log, default_env_path, set_debug
 from arxiv_astro.workflows import (
     build_content_context,
     build_explain_context,
@@ -82,8 +82,20 @@ def add_common_args(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--debug", action="store_true", help="Print debug information to stderr")
 
 
+def load_environment() -> None:
+    original_env = set(os.environ)
+    config_values = dotenv_values(default_env_path())
+    cwd_values = dotenv_values(Path.cwd() / ".env")
+    for key, value in config_values.items():
+        if value is not None and key not in original_env:
+            os.environ[key] = value
+    for key, value in cwd_values.items():
+        if value is not None and key not in original_env:
+            os.environ[key] = value
+
+
 def main(argv: list[str] | None = None) -> int:
-    load_dotenv()
+    load_environment()
     args = build_parser().parse_args(argv)
     command = args.command or "fetch"
     if command not in {"content", "explain", "report", "serve"} and not args.category:
@@ -129,8 +141,8 @@ def main(argv: list[str] | None = None) -> int:
 def run_fetch(category: str, max_results: int, settings: Settings) -> int:
     render_stage("1/1", "Fetch recent arXiv metadata", f"category: {category}  papers: {max_results}")
     papers = ArxivClient(timeout=settings.request_timeout).fetch_category(category, max_results)
-    debug_log("writing metadata", output_dir=settings.output_dir)
-    output_path = write_fetch_outputs(papers, Path(settings.output_dir), category, max_results)
+    debug_log("writing metadata", paper_data_dir=settings.paper_data_dir, runs_dir=settings.runs_dir)
+    output_path = write_fetch_outputs(papers, Path(settings.paper_data_dir), category, max_results, runs_root=Path(settings.runs_dir))
     render_fetch_summary(papers, category, max_results, output_path)
     render_next_steps([f"arxiv-reader content --input {output_path}"])
     print(output_path)
@@ -140,19 +152,21 @@ def run_fetch(category: str, max_results: int, settings: Settings) -> int:
 def run_content(input_path: Path, settings: Settings) -> int:
     papers = read_metadata(input_path)
     debug_log("loaded metadata input", input=str(input_path), count=len(papers))
-    output_root = Path(settings.output_dir)
-    loader = ContentLoader(output_root=output_root, timeout=settings.request_timeout)
-    blocks = load_content_blocks_with_cache(papers, loader, output_root)
-    figure_sets = download_figure_sets(blocks, FigureDownloader(output_root, timeout=settings.request_timeout))
+    paper_root = Path(settings.paper_data_dir)
+    runs_root = Path(settings.runs_dir)
+    loader = ContentLoader(output_root=paper_root, timeout=settings.request_timeout)
+    blocks = load_content_blocks_with_cache(papers, loader, paper_root)
+    figure_sets = download_figure_sets(blocks, FigureDownloader(paper_root, timeout=settings.request_timeout))
     context = build_content_context(input_path, papers)
-    debug_log("writing content", output_dir=settings.output_dir)
+    debug_log("writing content", paper_data_dir=settings.paper_data_dir, runs_dir=settings.runs_dir)
     output_path = write_content_outputs(
         blocks,
-        output_root,
+        paper_root,
         context.category,
         context.max_results,
         context.metadata_paths,
         figure_sets,
+        runs_root=runs_root,
     )
     print(output_path)
     return 0
@@ -168,20 +182,22 @@ def run_explain(input_path: Path, settings: Settings) -> int:
         timeout=settings.llm_request_timeout,
         max_output_tokens=settings.llm_max_output_tokens,
     )
-    output_root = Path(settings.output_dir)
-    blocks = explain_content_blocks_with_cache(content_blocks, llm_client, settings.max_input_chars, output_root)
-    context = build_explain_context(input_path, content_blocks, output_root)
-    debug_log("writing interpretations", output_dir=settings.output_dir)
+    paper_root = Path(settings.paper_data_dir)
+    runs_root = Path(settings.runs_dir)
+    blocks = explain_content_blocks_with_cache(content_blocks, llm_client, settings.max_input_chars, paper_root)
+    context = build_explain_context(input_path, content_blocks, paper_root)
+    debug_log("writing interpretations", paper_data_dir=settings.paper_data_dir, runs_dir=settings.runs_dir)
     output_path = write_interpretation_outputs(
         blocks,
         context.content_by_id,
-        output_root,
+        paper_root,
         context.category,
         context.max_results,
         metadata_paths=context.metadata_paths,
         content_paths=context.content_paths,
         figure_sets=context.figure_sets,
         figure_paths=context.figure_paths,
+        runs_root=runs_root,
     )
     print(output_path)
     return 0
@@ -212,11 +228,11 @@ def run_pipeline(
     )
     pipeline = Pipeline(
         arxiv_client=ArxivClient(timeout=settings.request_timeout),
-        content_loader=ContentLoader(output_root=Path(settings.output_dir), timeout=settings.request_timeout),
+        content_loader=ContentLoader(output_root=Path(settings.paper_data_dir), timeout=settings.request_timeout),
         llm_client=llm_client,
         max_input_chars=settings.max_input_chars,
-        cache_root=Path(settings.output_dir),
-        figure_downloader=FigureDownloader(Path(settings.output_dir), timeout=settings.request_timeout),
+        cache_root=Path(settings.paper_data_dir),
+        figure_downloader=FigureDownloader(Path(settings.paper_data_dir), timeout=settings.request_timeout),
         paper_selector=PaperSelector(
             llm_client=llm_client,
             max_input_chars=settings.selection_max_input_chars,
@@ -251,11 +267,18 @@ def run_pipeline(
         ]
     render_pipeline_summary(blocks)
     selection_path = (
-        write_selection_block(pipeline.selection_block, Path(settings.output_dir))
+        write_selection_block(pipeline.selection_block, Path(settings.runs_dir))
         if pipeline.selection_block
         else None
     )
-    output_path = write_reader_outputs(blocks, Path(settings.output_dir), category, max_results, selection_path=selection_path)
+    output_path = write_reader_outputs(
+        blocks,
+        Path(settings.paper_data_dir),
+        category,
+        max_results,
+        selection_path=selection_path,
+        runs_root=Path(settings.runs_dir),
+    )
     render_stage("4/4", "Saved outputs", "reader manifest written")
     render_output_path("saved", output_path)
     render_next_steps(
@@ -269,8 +292,8 @@ def run_pipeline(
 
 
 def run_report(input_path: Path, settings: Settings) -> int:
-    debug_log("generating html report", input=str(input_path), output_dir=settings.output_dir)
-    output_path = generate_report(input_path, Path(settings.output_dir))
+    debug_log("generating html report", input=str(input_path), paper_data_dir=settings.paper_data_dir, runs_dir=settings.runs_dir)
+    output_path = generate_report(input_path, Path(settings.paper_data_dir), Path(settings.runs_dir))
     render_output_path("report", output_path)
     render_next_steps(["arxiv-reader serve --port 8765"])
     print(output_path)
@@ -278,17 +301,7 @@ def run_report(input_path: Path, settings: Settings) -> int:
 
 
 def run_serve(settings: Settings, port: int = 8765) -> int:
-    output_root = Path(settings.output_dir).resolve()
-    output_root.mkdir(parents=True, exist_ok=True)
-    handler = functools.partial(SimpleHTTPRequestHandler, directory=str(output_root))
-    server = ThreadingHTTPServer(("localhost", port), handler)
-    print(f"Serving {output_root} at http://localhost:{port}/")
-    try:
-        server.serve_forever()
-    except KeyboardInterrupt:
-        print("\nStopped")
-    finally:
-        server.server_close()
+    serve_local(Path(settings.paper_data_dir), Path(settings.runs_dir), port)
     return 0
 
 

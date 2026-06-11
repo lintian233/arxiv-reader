@@ -29,6 +29,7 @@ htmlcov/
 
 # Project runtime data
 data/
+runs/
 
 # Editors and OS
 .vscode/
@@ -36,3 +37,7 @@ data/
 .DS_Store
 .agents
 .codex
+
+# png
+*.gif
+*.png

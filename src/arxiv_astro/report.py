@@ -9,7 +9,7 @@ from jinja2 import Environment, FileSystemLoader, select_autoescape
 
 from arxiv_astro.metadata_io import read_metadata_manifest
 from arxiv_astro.models import KeyFigureInsight, LocalFigure, ReaderPaperBlock, RunManifest
-from arxiv_astro.writer import paper_file
+from arxiv_astro.writer import paper_file, run_id, run_manifest_path, safe_arxiv_id
 
 
 @dataclass(frozen=True)
@@ -21,25 +21,29 @@ class ReportContext:
     papers: list[dict[str, Any]]
 
 
-def generate_report(input_path: Path, output_root: Path) -> Path:
-    context, output_path = build_report(input_path, output_root)
+def generate_report(input_path: Path, paper_root: Path, runs_root: Path | None = None) -> Path:
+    context, output_path = build_report(input_path, paper_root, runs_root)
     output_path.parent.mkdir(parents=True, exist_ok=True)
     output_path.write_text(render_report(context), encoding="utf-8")
     return output_path
 
 
-def build_report(input_path: Path, output_root: Path) -> tuple[ReportContext, Path]:
+def build_report(input_path: Path, paper_root: Path, runs_root: Path | None = None) -> tuple[ReportContext, Path]:
     input_path = input_path.resolve()
-    output_root = output_root.resolve()
+    paper_root = paper_root.resolve()
+    effective_runs_root = runs_root.resolve() if runs_root else paper_root
     if input_path.name == "manifest.json":
         manifest = read_metadata_manifest(input_path)
         blocks = read_reader_blocks_from_manifest(manifest)
         output_path = input_path.parent / "report.html"
-        return build_report_context(blocks, output_path, output_root, manifest), output_path
+        return build_report_context(blocks, output_path, paper_root, manifest), output_path
 
     block = read_reader_block(input_path)
-    output_path = input_path.parent / "report.html"
-    return build_report_context([block], output_path, output_root), output_path
+    output_path = run_manifest_path(
+        effective_runs_root,
+        run_id(block.built_date or "manual", f"{block.paper.primary_category}_{block.paper.arxiv_id}"),
+    ).parent / "report.html"
+    return build_report_context([block], output_path, paper_root), output_path
 
 
 def read_reader_blocks_from_manifest(manifest: RunManifest) -> list[ReaderPaperBlock]:
@@ -60,7 +64,7 @@ def read_reader_block(path: Path) -> ReaderPaperBlock:
 def build_report_context(
     blocks: list[ReaderPaperBlock],
     report_path: Path,
-    output_root: Path,
+    paper_root: Path,
     manifest: RunManifest | None = None,
 ) -> ReportContext:
     category = manifest.category if manifest else infer_category(blocks)
@@ -70,7 +74,7 @@ def build_report_context(
         category=category,
         run_date=run_date,
         paper_count=len(blocks),
-        papers=[paper_view(block, report_path, output_root) for block in blocks],
+        papers=[paper_view(block, report_path, paper_root) for block in blocks],
     )
 
 
@@ -86,7 +90,7 @@ def infer_run_date(blocks: list[ReaderPaperBlock]) -> str:
     return blocks[0].built_date
 
 
-def paper_view(block: ReaderPaperBlock, report_path: Path, output_root: Path) -> dict[str, Any]:
+def paper_view(block: ReaderPaperBlock, report_path: Path, paper_root: Path) -> dict[str, Any]:
     paper = block.paper
     interpretation = block.llm_interpretation
     return {
@@ -98,7 +102,7 @@ def paper_view(block: ReaderPaperBlock, report_path: Path, output_root: Path) ->
         "html_url": str(paper.html_url),
         "interpretation": interpretation,
         "source": block.source,
-        "figures": [key_figure_view(block, insight, report_path, output_root) for insight in interpretation.key_figures],
+        "figures": [key_figure_view(block, insight, report_path, paper_root) for insight in interpretation.key_figures],
     }
 
 
@@ -106,11 +110,11 @@ def key_figure_view(
     block: ReaderPaperBlock,
     insight: KeyFigureInsight,
     report_path: Path,
-    output_root: Path,
+    paper_root: Path,
 ) -> dict[str, Any]:
     local_figure = find_local_figure(block, insight.index)
     article_image = block.content.images[insight.index - 1] if insight.index <= len(block.content.images) else None
-    image_src = figure_image_src(block, insight.index, output_root, local_figure)
+    image_src = figure_image_src(block, insight.index, paper_root, local_figure)
     return {
         "index": insight.index,
         "image_src": image_src,
@@ -133,14 +137,14 @@ def find_local_figure(block: ReaderPaperBlock, index: int) -> LocalFigure | None
 def figure_image_src(
     block: ReaderPaperBlock,
     index: int,
-    output_root: Path,
+    paper_root: Path,
     local_figure: LocalFigure | None,
 ) -> str | None:
     if local_figure:
-        paper_dir = paper_file(output_root, block.paper.arxiv_id, "reader.json").parent
+        paper_dir = paper_file(paper_root, block.paper.arxiv_id, "reader.json").parent
         local_path = paper_dir / local_figure.path
         if local_path.exists():
-            return site_url(local_path, output_root)
+            return paper_url(block.paper.arxiv_id, local_figure.path)
         return str(local_figure.url)
     if index <= len(block.content.images):
         return str(block.content.images[index - 1].url)
@@ -149,6 +153,10 @@ def figure_image_src(
 
 def site_url(path: Path, output_root: Path) -> str:
     return "/" + path.resolve().relative_to(output_root.resolve()).as_posix()
+
+
+def paper_url(arxiv_id: str, relative_path: str | Path) -> str:
+    return f"/papers/{safe_arxiv_id(arxiv_id)}/{Path(relative_path).as_posix()}"
 
 
 def format_authors(authors: list[str], max_authors: int = 6) -> str:
