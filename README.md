@@ -63,10 +63,11 @@ Run a complete reading pipeline:
 ```bash
 arxiv-reader run \
   --category astro-ph \
-  --fetch-results 10 \
   --max-results 2 \
   --interests "papers related to the FAST radio telescope and radio interferometric methods"
 ```
+
+When `--interests` is set and `--fetch-results` is omitted, `arxiv-reader` fetches all papers from the latest arXiv published day for the category, then asks the selection model to choose up to `--max-results` papers. Pass `--fetch-results N` only when you want to force a fixed-size recent candidate batch.
 
 The command prints the generated `manifest.json` path when it finishes. Use that path to build the HTML report:
 
@@ -101,10 +102,11 @@ Use `--interests` when you want the model to select a smaller reading set from a
 ```bash
 arxiv-reader run \
   --category astro-ph.IM,astro-ph.HE \
-  --fetch-results 50 \
   --max-results 5 \
   --interests "FRB localization, radio interferometry, transient detection pipelines"
 ```
+
+Use `--fetch-results N` for a fixed candidate window, for example when you want the selector to consider the latest 50 or 100 metadata records instead of the latest arXiv day.
 
 ## Local Data Layout
 
