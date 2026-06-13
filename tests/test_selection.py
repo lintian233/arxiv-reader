@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from arxiv_astro.llm_tasks.paper_selection import PaperSelectionTask, truncate_summary
+from arxiv_astro.llm_tasks.paper_selection import PaperSelectionTask, target_min_result_count, truncate_summary
 from arxiv_astro.models import PaperSelectionResult, SelectedPaper
 from arxiv_astro.selection import PaperSelector, build_selection_summary, normalize_selected
 
@@ -43,9 +43,19 @@ def test_paper_selection_task_builds_metadata_prompt(sample_paper) -> None:
     assert sample_paper.arxiv_id in messages[1]["content"]
     assert sample_paper.title in messages[1]["content"]
     assert "summary:" in messages[1]["content"]
-    assert "Scientific / technical problem" in messages[0]["content"]
+    assert "Directness" in messages[0]["content"]
     assert "Field-reading value" in messages[0]["content"]
     assert "relevance 5 和 4" in messages[1]["content"]
+    assert "target_min_results: 1" in messages[1]["content"]
+    assert "max_results 是上限" in messages[1]["content"]
+    assert "不要为了接近 max_results" in messages[0]["content"]
+
+
+def test_target_min_result_count_is_half_ceiling() -> None:
+    assert target_min_result_count(0) == 0
+    assert target_min_result_count(1) == 1
+    assert target_min_result_count(5) == 3
+    assert target_min_result_count(20) == 10
 
 
 def test_paper_selection_task_rejects_too_long_input(sample_paper) -> None:

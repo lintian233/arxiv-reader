@@ -231,6 +231,33 @@ def test_pipeline_selects_papers_before_content_and_explain(sample_paper, sample
     assert pipeline.selection_block.selected[0].reason == "most relevant"
 
 
+def test_pipeline_fetches_latest_day_candidates_when_fetch_results_is_omitted(sample_paper, sample_interpretation) -> None:
+    class LatestDayArxivClient:
+        def __init__(self) -> None:
+            self.used_latest_day = False
+
+        def fetch_latest_day(self, category: str):
+            assert category == "astro-ph"
+            self.used_latest_day = True
+            return [sample_paper]
+
+        def fetch_category(self, category: str, max_results: int):
+            raise AssertionError("fixed-count fetch should not run when fetch_results is omitted")
+
+    arxiv_client = LatestDayArxivClient()
+    pipeline = Pipeline(
+        arxiv_client=arxiv_client,
+        content_loader=FakeContentLoader(),
+        llm_client=FakeLLMClient(sample_interpretation),
+        max_input_chars=1000,
+    )
+
+    candidates = pipeline.fetch_candidates("astro-ph", max_results=1, fetch_results=None, interests="FRB")
+
+    assert candidates == [sample_paper]
+    assert arxiv_client.used_latest_day is True
+
+
 def test_build_reader_block_and_write_outputs(sample_paper, sample_interpretation, tmp_path: Path) -> None:
     content = PaperContent(content_type=ContentType.ABSTRACT, text="abstract", text_chars=8)
     block = build_paper_block(sample_paper, content, sample_interpretation, "ab")
@@ -315,6 +342,8 @@ def test_settings_from_env(monkeypatch) -> None:
     monkeypatch.setenv("DEEPSEEK_API_KEY", "key")
     monkeypatch.setenv("DEEPSEEK_BASE_URL", "https://example.com")
     monkeypatch.setenv("DEEPSEEK_MODEL", "model")
+    monkeypatch.setenv("DEEPSEEK_SELECTION_MODEL", "selection-model")
+    monkeypatch.setenv("DEEPSEEK_INTERPRETATION_MODEL", "interpretation-model")
     monkeypatch.setenv("OUTPUT_DIR", "out")
     monkeypatch.setenv("REQUEST_TIMEOUT", "12.5")
     monkeypatch.setenv("LLM_REQUEST_TIMEOUT", "180.5")
@@ -330,6 +359,9 @@ def test_settings_from_env(monkeypatch) -> None:
 
     assert settings.api_key == "key"
     assert settings.base_url == "https://example.com"
+    assert settings.model == "model"
+    assert settings.selection_model == "selection-model"
+    assert settings.interpretation_model == "interpretation-model"
     assert settings.output_dir == "out"
     assert settings.request_timeout == 12.5
     assert settings.llm_request_timeout == 180.5
@@ -341,6 +373,17 @@ def test_settings_from_env(monkeypatch) -> None:
     assert settings.selection_summary_max_chars == 321
     assert settings.debug is True
     set_debug(False)
+
+
+def test_task_models_default_to_base_model(monkeypatch) -> None:
+    monkeypatch.setenv("DEEPSEEK_MODEL", "base-model")
+    monkeypatch.delenv("DEEPSEEK_SELECTION_MODEL", raising=False)
+    monkeypatch.delenv("DEEPSEEK_INTERPRETATION_MODEL", raising=False)
+
+    settings = Settings.from_env()
+
+    assert settings.selection_model == "base-model"
+    assert settings.interpretation_model == "base-model"
 
 
 def test_settings_default_output_dir_uses_user_data_dir(monkeypatch, tmp_path: Path) -> None:
@@ -632,6 +675,7 @@ def test_cli_explain_loads_content_and_writes_interpretation(
             max_output_tokens: int,
         ) -> None:
             assert api_key == "key"
+            assert model == "interpretation-model"
             assert timeout == 180.0
             assert max_output_tokens == 12000
             self.model = model
@@ -649,6 +693,8 @@ def test_cli_explain_loads_content_and_writes_interpretation(
             }
 
     monkeypatch.setenv("DEEPSEEK_API_KEY", "key")
+    monkeypatch.setenv("DEEPSEEK_INTERPRETATION_MODEL", "interpretation-model")
+    monkeypatch.setenv("LLM_MAX_OUTPUT_TOKENS", "12000")
     monkeypatch.setenv("OUTPUT_DIR", str(tmp_path))
     monkeypatch.setattr(cli, "LLMClient", FakeExplainLLMClient)
 
@@ -702,6 +748,7 @@ def test_cli_explain_uses_cached_interpretation(monkeypatch, sample_paper, sampl
 
     monkeypatch.setenv("OUTPUT_DIR", str(tmp_path))
     monkeypatch.setenv("DEEPSEEK_MODEL", "deepseek-v4-pro")
+    monkeypatch.setenv("DEEPSEEK_INTERPRETATION_MODEL", "deepseek-v4-pro")
     monkeypatch.setenv("MAX_INPUT_CHARS", "400000")
     monkeypatch.setenv("LLM_MAX_OUTPUT_TOKENS", "12000")
     monkeypatch.setattr(cli, "LLMClient", FailingExplainLLMClient)
@@ -736,7 +783,8 @@ def test_cli_run_reports_selection_error(monkeypatch, tmp_path: Path, capsys) ->
         selection_block = None
 
         def __init__(self, **kwargs) -> None:
-            pass
+            assert kwargs["llm_client"].model == "interpretation-model"
+            assert kwargs["paper_selector"].llm_client.model == "selection-model"
 
         def fetch_candidates(self, *args, **kwargs):
             from arxiv_astro.selection import SelectionError
@@ -749,6 +797,8 @@ def test_cli_run_reports_selection_error(monkeypatch, tmp_path: Path, capsys) ->
 
     monkeypatch.setenv("OUTPUT_DIR", str(tmp_path))
     monkeypatch.setenv("DEEPSEEK_API_KEY", "key")
+    monkeypatch.setenv("DEEPSEEK_SELECTION_MODEL", "selection-model")
+    monkeypatch.setenv("DEEPSEEK_INTERPRETATION_MODEL", "interpretation-model")
     monkeypatch.setattr(cli, "Pipeline", FailingPipeline)
     monkeypatch.setattr(cli, "LLMClient", FakeLLMClient)
 

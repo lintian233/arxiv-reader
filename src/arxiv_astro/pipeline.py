@@ -83,6 +83,8 @@ class Pipeline:
         interests: str | None = None,
     ) -> list[PaperMetadata]:
         self.selection_block = None
+        if interests and fetch_results is None:
+            return self.arxiv_client.fetch_latest_day(category)
         effective_fetch_results = fetch_results if interests else max_results
         return self.arxiv_client.fetch_category(category, max_results=effective_fetch_results or max_results)
 

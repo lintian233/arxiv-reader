@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from datetime import date
+from collections.abc import Iterable
 from typing import Protocol
 
 import arxiv
@@ -51,6 +53,19 @@ class ArxivClient:
         debug_log("fetched arxiv papers", count=len(papers))
         return papers
 
+    def fetch_latest_day(self, category: str, max_scan_results: int = 120) -> list[PaperMetadata]:
+        search = build_search(category, max_scan_results)
+        client = self._client or self._build_client(max_scan_results)
+        debug_log(
+            "fetching latest arxiv day",
+            category=category,
+            max_scan_results=max_scan_results,
+            page_size=effective_page_size(self._page_size, max_scan_results),
+        )
+        papers = latest_day_papers(paper_from_result(result) for result in client.results(search))
+        debug_log("fetched latest arxiv day", count=len(papers), published=latest_published_date(papers))
+        return papers
+
     def _build_client(self, max_results: int) -> arxiv.Client:
         return arxiv.Client(
             page_size=effective_page_size(self._page_size, max_results),
@@ -93,6 +108,25 @@ def fetch_category(
         delay_seconds=delay_seconds,
         num_retries=num_retries,
     ).fetch_category(category, max_results)
+
+
+def latest_day_papers(papers: Iterable[PaperMetadata]) -> list[PaperMetadata]:
+    latest_date: date | None = None
+    latest_papers: list[PaperMetadata] = []
+    for paper in papers:
+        published_date = paper.published.date()
+        if latest_date is None:
+            latest_date = published_date
+        if published_date != latest_date:
+            break
+        latest_papers.append(paper)
+    return latest_papers
+
+
+def latest_published_date(papers: list[PaperMetadata]) -> str:
+    if not papers:
+        return ""
+    return papers[0].published.date().isoformat()
 
 
 def build_search(category: str, max_results: int) -> arxiv.Search:

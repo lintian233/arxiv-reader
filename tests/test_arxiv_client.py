@@ -41,6 +41,19 @@ def make_result() -> arxiv.Result:
     )
 
 
+def make_result_with_date(arxiv_id: str, published: datetime) -> arxiv.Result:
+    return arxiv.Result(
+        entry_id=f"http://arxiv.org/abs/{arxiv_id}",
+        updated=published,
+        published=published,
+        title=f"Paper {arxiv_id}",
+        authors=[arxiv.Result.Author("Ada Lovelace")],
+        summary="A useful abstract.",
+        primary_category="astro-ph.CO",
+        categories=["astro-ph.CO"],
+    )
+
+
 def test_build_search_uses_category_and_latest_sort() -> None:
     search = build_search("astro-ph.CO", max_results=20)
 
@@ -100,6 +113,25 @@ def test_arxiv_client_fetches_category_through_arxiv_package() -> None:
     assert fake_client.seen_search is not None
     assert fake_client.seen_search.query == "cat:astro-ph.CO"
     assert fake_client.seen_search.max_results == 1
+
+
+def test_arxiv_client_fetches_latest_day_only() -> None:
+    latest = datetime(2024, 1, 3, tzinfo=timezone.utc)
+    previous = datetime(2024, 1, 2, tzinfo=timezone.utc)
+    fake_client = FakeArxivClient(
+        [
+            make_result_with_date("2401.00003v1", latest),
+            make_result_with_date("2401.00002v1", latest),
+            make_result_with_date("2401.00001v1", previous),
+        ]
+    )
+    client = ArxivClient(client=fake_client)
+
+    papers = client.fetch_latest_day("astro-ph.CO", max_scan_results=200)
+
+    assert [paper.arxiv_id for paper in papers] == ["2401.00003v1", "2401.00002v1"]
+    assert fake_client.seen_search is not None
+    assert fake_client.seen_search.max_results == 200
 
 
 def test_effective_page_size_never_exceeds_requested_results() -> None:

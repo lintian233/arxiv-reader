@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import math
 from typing import Any
 
 from arxiv_astro.llm_client import LLMClient
@@ -67,34 +68,36 @@ def system_prompt() -> str:
 - 最多返回用户要求的 max_results 篇论文。
 - selected 必须按 relevance 从高到低排序。
 - matched_interests 写实际匹配到的用户兴趣词或短语。
-- reason 用一句话说明具体匹配了哪些维度，例如科学问题、研究对象、仪器/数据、方法、结果价值或领域阅读价值。
+- reason 用一句话说明具体证据和匹配维度，例如科学问题、研究对象、仪器/数据、方法、结果价值或领域阅读价值。
 
 请从以下维度判断相关性和阅读价值：
-1. Scientific / technical problem：论文研究的问题是否直接触及用户兴趣，还是只是同属宽泛领域。
-2. Object / phenomenon / data / instrument：研究对象、物理现象、观测数据、仪器、巡天或样本是否与用户兴趣相关。
-3. Method / pipeline / modeling：方法、数据处理、建模、校准、分类、统计推断或系统误差分析是否与用户兴趣相关。
-4. Contribution clarity：摘要是否显示清楚贡献、结果或改进，而不是只有背景描述。
-5. Field-reading value：即使不是完全命中关键词，是否有助于理解该方向的前沿问题、主流方法、常见数据产品或技术瓶颈。
+1. Directness：论文是否直接触及用户兴趣中的科学/技术问题，而不只是同属宽泛领域。
+2. Evidence：标题、摘要或备注是否提供明确证据支持相关性；不要基于联想或关键词脑补。
+3. Object / data / instrument：研究对象、物理现象、观测数据、仪器、巡天或样本是否相关。
+4. Method / pipeline / modeling：方法、数据处理、建模、校准、分类、统计推断或系统误差分析是否相关。
+5. Contribution clarity：摘要是否显示清楚贡献、结果、指标、趋势或方法改进，而不是只有背景描述。
+6. Field-reading value：即使不是完全命中关键词，是否有助于理解该方向的前沿问题、主流方法、常见数据产品或技术瓶颈。
 
 relevance 评分标准：
-5 = must-read。科学/技术问题直接匹配用户兴趣，且对象/方法/贡献至少两个维度强相关，应优先进入全文解读。
-4 = strong match。明显相关，对理解该兴趣方向有实际帮助，建议进入全文解读。
-3 = useful adjacent。中等相关，可能是相邻问题、方法、数据、仪器或背景相关；当 4/5 不足时可以选择。
-2 = weak match。只是关键词、宽泛领域或背景相关，不值得进入后续全文解读。
+5 = must-read。科学/技术问题直接匹配用户兴趣，且对象/数据/仪器/方法/贡献中至少两个维度有明确摘要证据，应优先进入全文解读。
+4 = strong match。明显相关，至少一个核心维度强相关，另一个维度中等相关；摘要证据足以说明值得阅读全文。
+3 = useful adjacent。相邻相关，不能算直接命中，但对理解用户兴趣方向的方法、数据、仪器、系统误差、背景或领域趋势有明确帮助；可以作为补充选择。
+2 = weak match。只有关键词、宽泛领域、背景性或不确定关联；不值得进入后续全文解读。
 1 = irrelevant。基本无关。
 
 选择策略：
 - 优先选择 relevance 5 和 4。
-- 如果 5/4 不足 max_results，可以补充 relevance 3。
+- 如果 5/4 不足 max_results，可以补充 relevance 3，但 relevance 3 必须有明确相邻阅读价值。
 - 不要选择 relevance 1 或 2 来凑数。
-- 在不选择明显无关论文的前提下，请尽量返回接近 max_results 的论文。
-- 如果 relevance >= 3 的论文仍少于 max_results，可以少选，并在 shortfall_reason 中用一句话说明原因。
+- max_results 是上限，不是必须达到的目标；不要为了接近 max_results 而选择 weak match 或证据不足的论文。
+- 用户会提供 target_min_results。请在不选择 weak match 或证据不足论文的前提下，尽量返回不少于 target_min_results 篇。
+- 如果 relevance >= 3 的论文少于 target_min_results，可以少选，并在 shortfall_reason 中用一句话说明原因。
 - 如果选满，shortfall_reason 使用空字符串。
 
 反关键词陷阱：
 - 标题或摘要出现用户关键词不代表一定相关。
-- 如果摘要不能支持实际科学问题、方法、对象或结果相关，不能给 4/5。
 - 没有直接关键词但问题、方法、对象或仪器高度相关，也可以选择。
+- reason 不要写空泛评价，例如“很相关”“值得阅读”；必须说明 evidence 来自哪类 metadata 信息。
 
 必须严格使用以下 JSON 骨架：
 {"selected":[{"arxiv_id":"","relevance":5,"matched_interests":[""],"reason":""}],"shortfall_reason":""}
@@ -111,16 +114,20 @@ def user_prompt(
         format_candidate(index, paper, summary_max_chars)
         for index, paper in enumerate(papers, start=1)
     )
+    target_min_results = target_min_result_count(max_results)
     return (
         f"用户兴趣:\n{interests}\n\n"
-        f"选择论文数 max_results: {max_results}\n\n"
+        f"选择论文数上限 max_results: {max_results}\n"
+        f"期望最低返回数 target_min_results: {target_min_results}\n\n"
         f"候选论文总数: {len(papers)}\n\n"
         f"候选论文 metadata:\n{candidates}\n\n"
         "请根据 system rubric 选择最值得进入后续全文解读的论文。"
-        "请优先选 relevance 5 和 4 的论文；如果数量不足，可以选择 relevance 3 但仍有助于理解领域前沿或主流方法的论文。"
+        "max_results 是上限，不是必须凑满的目标。"
+        "请优先选 relevance 5 和 4 的论文；如果数量不足，可以选择 relevance 3 但必须说明明确的相邻阅读价值。"
+        "在不选择 weak match 或证据不足论文的前提下，请尽量返回不少于 target_min_results 篇。"
         "不要用 relevance 1 或 2 的论文凑数。"
         "reason 必须说明具体匹配原因，例如科学问题、研究对象、仪器/数据、方法、结果价值或领域阅读价值。"
-        "如果 selected 数量少于 max_results，shortfall_reason 必须说明为什么候选中没有足够多 relevance >= 3 的论文。"
+        "如果 selected 数量少于 target_min_results，shortfall_reason 必须说明为什么候选中没有足够多 relevance >= 3 的论文。"
         "请只返回 JSON。"
     )
 
@@ -135,6 +142,12 @@ def format_candidate(index: int, paper: PaperMetadata, summary_max_chars: int) -
         f"comment: {paper.comment or 'N/A'}\n"
         f"summary: {truncate_summary(paper.summary, summary_max_chars)}"
     )
+
+
+def target_min_result_count(max_results: int) -> int:
+    if max_results <= 0:
+        return 0
+    return max(1, math.ceil(max_results / 2))
 
 
 def truncate_summary(summary: str, max_chars: int) -> str:

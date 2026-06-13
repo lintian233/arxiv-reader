@@ -53,6 +53,8 @@ cat > ~/.config/arxiv-reader/.env <<'EOF'
 DEEPSEEK_API_KEY=your-api-key
 DEEPSEEK_BASE_URL=https://api.deepseek.com
 DEEPSEEK_MODEL=deepseek-v4-pro
+DEEPSEEK_SELECTION_MODEL=deepseek-v4-pro
+DEEPSEEK_INTERPRETATION_MODEL=deepseek-v4-pro
 EOF
 ```
 
@@ -145,6 +147,8 @@ cat > ~/.config/arxiv-reader/.env <<'EOF'
 DEEPSEEK_API_KEY=your-api-key
 DEEPSEEK_BASE_URL=https://api.deepseek.com
 DEEPSEEK_MODEL=deepseek-v4-pro
+DEEPSEEK_SELECTION_MODEL=deepseek-v4-pro
+DEEPSEEK_INTERPRETATION_MODEL=deepseek-v4-flash
 EOF
 ```
 
@@ -160,7 +164,9 @@ Advanced options:
 | --- | --- | --- |
 | `DEEPSEEK_API_KEY` | empty | API key used by the OpenAI-compatible LLM client. Required for selection and interpretation. |
 | `DEEPSEEK_BASE_URL` | `https://api.deepseek.com` | OpenAI-compatible API endpoint. |
-| `DEEPSEEK_MODEL` | `deepseek-v4-pro` | Model used for paper selection and interpretation. |
+| `DEEPSEEK_MODEL` | `deepseek-v4-pro` | Default model used when task-specific model variables are not set. |
+| `DEEPSEEK_SELECTION_MODEL` | `DEEPSEEK_MODEL` | Model used for paper selection. |
+| `DEEPSEEK_INTERPRETATION_MODEL` | `DEEPSEEK_MODEL` | Model used for paper interpretation. |
 | `PAPER_DATA_DIR` | `~/.local/share/arxiv-reader` | Long-lived paper cache root for PDFs, figures, and normalized paper blocks. |
 | `RUNS_DIR` | `.` | Root directory for run manifests, selection files, and generated reports. |
 | `REQUEST_TIMEOUT` | `30` | Timeout in seconds for arXiv, content, and figure HTTP requests. |
@@ -168,7 +174,7 @@ Advanced options:
 | `MAX_INPUT_CHARS` | `400000` | Maximum paper text characters sent to the interpretation task. |
 | `LLM_MAX_OUTPUT_TOKENS` | `12000` | Maximum output tokens requested from the LLM. |
 | `PAPER_INTERESTS` | empty | Default research interests used by `run` when `--interests` is omitted. |
-| `FETCH_RESULTS` | `100` | Default number of metadata candidates fetched before selection. |
+| `FETCH_RESULTS` | empty | Default number of metadata candidates fetched before selection. When empty, `run --interests ...` uses all papers from the latest arXiv published day in the returned category results. |
 | `SELECTION_MAX_INPUT_CHARS` | `220000` | Maximum metadata prompt size for paper selection. |
 | `SELECTION_SUMMARY_MAX_CHARS` | `4000` | Maximum abstract characters per paper used during selection. |
 | `DEBUG` | false | Enables debug logging when set to `1`, `true`, `yes`, or `on`. |

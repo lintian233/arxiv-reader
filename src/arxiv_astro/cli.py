@@ -178,7 +178,7 @@ def run_explain(input_path: Path, settings: Settings) -> int:
     llm_client = LLMClient(
         api_key=settings.api_key,
         base_url=settings.base_url,
-        model=settings.model,
+        model=settings.interpretation_model,
         timeout=settings.llm_request_timeout,
         max_output_tokens=settings.llm_max_output_tokens,
     )
@@ -222,9 +222,20 @@ def run_pipeline(
     llm_client = LLMClient(
         api_key=settings.api_key,
         base_url=settings.base_url,
-        model=settings.model,
+        model=settings.interpretation_model,
         timeout=settings.llm_request_timeout,
         max_output_tokens=settings.llm_max_output_tokens,
+    )
+    selection_llm_client = (
+        LLMClient(
+            api_key=settings.api_key,
+            base_url=settings.base_url,
+            model=settings.selection_model,
+            timeout=settings.llm_request_timeout,
+            max_output_tokens=settings.llm_max_output_tokens,
+        )
+        if effective_interests
+        else None
     )
     pipeline = Pipeline(
         arxiv_client=ArxivClient(timeout=settings.request_timeout),
@@ -234,16 +245,23 @@ def run_pipeline(
         cache_root=Path(settings.paper_data_dir),
         figure_downloader=FigureDownloader(Path(settings.paper_data_dir), timeout=settings.request_timeout),
         paper_selector=PaperSelector(
-            llm_client=llm_client,
+            llm_client=selection_llm_client,
             max_input_chars=settings.selection_max_input_chars,
             summary_max_chars=settings.selection_summary_max_chars,
         )
         if effective_interests
         else None,
     )
-    candidate_count = effective_fetch_results if effective_interests and effective_fetch_results else max_results
-    render_stage("1/4", "Fetch candidates", f"category: {category}  candidates: {candidate_count}")
+    candidate_target = (
+        str(effective_fetch_results)
+        if effective_interests and effective_fetch_results is not None
+        else "latest day"
+        if effective_interests
+        else str(max_results)
+    )
+    render_stage("1/4", "Fetch candidates", f"category: {category}  candidates: {candidate_target}")
     candidates = pipeline.fetch_candidates(category, max_results, effective_fetch_results, effective_interests)
+    candidate_count = effective_fetch_results if effective_fetch_results is not None else len(candidates)
     render_fetch_summary(
         candidates,
         category,
